@@ -92,3 +92,4 @@ docs/superpowers/
 # Python cache
 __pycache__/
 *.py[cod]
+checkpoints/

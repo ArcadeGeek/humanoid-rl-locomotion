@@ -13,7 +13,12 @@ from isaaclab_tasks.manager_based.locomotion.velocity.config.g1.agents.rsl_rl_pp
 
 @configclass
 class PPORunnerCfg(G1FlatPPORunnerCfg):
-    """Official G1 flat PPO settings with a project-specific log namespace."""
+    """Official G1 flat PPO settings with project-specific runtime metadata."""
+
+    obs_groups = {
+        "actor": ["policy"],
+        "critic": ["policy"],
+    }
 
     def __post_init__(self) -> None:
         super().__post_init__()
