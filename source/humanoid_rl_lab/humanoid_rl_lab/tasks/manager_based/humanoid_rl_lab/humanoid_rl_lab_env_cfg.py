@@ -7,7 +7,7 @@
 
 The training and play configurations initially inherit the official Isaac Lab
 G1 task. Evaluation configurations keep the same policy interface while using
-deterministic forward commands.
+deterministic forward commands and deterministic reset states.
 """
 
 from isaaclab.utils.configclass import configclass
@@ -15,6 +15,19 @@ from isaaclab_tasks.manager_based.locomotion.velocity.config.g1.flat_env_cfg imp
     G1FlatEnvCfg,
     G1FlatEnvCfg_PLAY,
 )
+
+
+def _set_deterministic_reset(cfg) -> None:
+    """Remove base pose and velocity randomness for repeatable evaluation."""
+
+    pose_range = cfg.events.reset_base.params["pose_range"]
+    pose_range["x"] = (0.0, 0.0)
+    pose_range["y"] = (0.0, 0.0)
+    pose_range["yaw"] = (0.0, 0.0)
+
+    velocity_range = cfg.events.reset_base.params["velocity_range"]
+    for key in ("x", "y", "z", "roll", "pitch", "yaw"):
+        velocity_range[key] = (0.0, 0.0)
 
 
 @configclass
@@ -32,27 +45,22 @@ class HumanoidRlLabEnvCfg_PLAY(G1FlatEnvCfg_PLAY):
 
 
 @configclass
-class HumanoidRlLabEnvCfg_HEADING_EVAL(HumanoidRlLabEnvCfg_PLAY):
-    """Deterministic evaluation at 0.4 m/s while holding world heading at zero."""
+class HumanoidRlLabEnvCfg_EVAL(HumanoidRlLabEnvCfg_PLAY):
+    """Deterministic evaluation at 0.4 m/s with zero yaw-rate command."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
 
         self.scene.num_envs = 1
-
-        reset_pose_range = self.events.reset_base.params["pose_range"]
-        reset_pose_range["x"] = (0.0, 0.0)
-        reset_pose_range["y"] = (0.0, 0.0)
-        reset_pose_range["yaw"] = (0.0, 0.0)
+        _set_deterministic_reset(self)
 
         command = self.commands.base_velocity
-        command.heading_command = True
-        command.heading_control_stiffness = 0.5
-        command.rel_heading_envs = 1.0
+        command.heading_command = False
+        command.rel_heading_envs = 0.0
         command.rel_standing_envs = 0.0
         command.ranges.lin_vel_x = (0.4, 0.4)
         command.ranges.lin_vel_y = (0.0, 0.0)
-        command.ranges.ang_vel_z = (-0.5, 0.5)
+        command.ranges.ang_vel_z = (0.0, 0.0)
         command.ranges.heading = (0.0, 0.0)
 
 
@@ -64,6 +72,7 @@ class HumanoidRlLabEnvCfg_HEADING_EVAL(HumanoidRlLabEnvCfg_PLAY):
         super().__post_init__()
 
         self.scene.num_envs = 1
+        _set_deterministic_reset(self)
 
         command = self.commands.base_velocity
         command.heading_command = True
