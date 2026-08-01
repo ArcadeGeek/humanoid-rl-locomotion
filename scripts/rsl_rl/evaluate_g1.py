@@ -290,7 +290,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
         agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, installed_version)
 
         env_cfg.scene.num_envs = 1
-        env_cfg.seed = agent_cfg.seed
+        env_cfg.seed = int(args_cli.seed)
         env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
         env_cfg.episode_length_s = max(
             float(env_cfg.episode_length_s),
