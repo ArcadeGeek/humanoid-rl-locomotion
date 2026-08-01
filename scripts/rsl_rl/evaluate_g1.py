@@ -125,6 +125,7 @@ def _build_summary(
     checkpoint: str,
     checkpoint_hash: str,
     seed: int,
+    initial_state: dict[str, object],
     joint_names: list[str],
     terminated_stage: str | None,
 ) -> dict:
@@ -153,10 +154,11 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
+        "initial_state": initial_state,
         "checkpoint": {
             "path": os.path.abspath(checkpoint),
             "sha256": checkpoint_hash,
@@ -369,6 +371,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
             )
 
             obs = env.get_observations()
+
+            initial_root_pos_w = _cpu_values(_torch(robot.data.root_pos_w)[0])
+            initial_root_lin_vel_w = _cpu_values(_torch(robot.data.root_lin_vel_w)[0])
+            initial_root_ang_vel_w = _cpu_values(_torch(robot.data.root_ang_vel_w)[0])
+            initial_heading_w = float(_torch(robot.data.heading_w)[0].detach().cpu().item())
+            initial_state: dict[str, object] = {
+                "root_position_world_m": {
+                    "x": initial_root_pos_w[0],
+                    "y": initial_root_pos_w[1],
+                    "z": initial_root_pos_w[2],
+                },
+                "root_linear_velocity_world_mps": {
+                    "x": initial_root_lin_vel_w[0],
+                    "y": initial_root_lin_vel_w[1],
+                    "z": initial_root_lin_vel_w[2],
+                },
+                "root_angular_velocity_world_radps": {
+                    "x": initial_root_ang_vel_w[0],
+                    "y": initial_root_ang_vel_w[1],
+                    "z": initial_root_ang_vel_w[2],
+                },
+                "heading_world_rad": initial_heading_w,
+                "heading_world_deg": math.degrees(initial_heading_w),
+            }
+
             records: list[dict[str, float]] = []
             terminated_stage: str | None = None
 
@@ -441,6 +468,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 checkpoint=checkpoint,
                 checkpoint_hash=checkpoint_hash,
                 seed=int(env_cfg.seed),
+                initial_state=initial_state,
                 joint_names=resolved_joint_names,
                 terminated_stage=terminated_stage,
             )
