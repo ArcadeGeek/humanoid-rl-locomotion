@@ -83,3 +83,18 @@ class HumanoidRlLabEnvCfg_HEADING_EVAL(HumanoidRlLabEnvCfg_PLAY):
         command.ranges.lin_vel_y = (0.0, 0.0)
         command.ranges.ang_vel_z = (-0.5, 0.5)
         command.ranges.heading = (0.0, 0.0)
+
+@configclass
+class HumanoidRlLabEnvCfg_ROBUST_EVAL(HumanoidRlLabEnvCfg_EVAL):
+    """Seeded evaluation with conservative initial base-velocity perturbations."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        velocity_range = self.events.reset_base.params["velocity_range"]
+        velocity_range["x"] = (-0.15, 0.15)
+        velocity_range["y"] = (-0.15, 0.15)
+        velocity_range["z"] = (-0.05, 0.05)
+        velocity_range["roll"] = (-0.10, 0.10)
+        velocity_range["pitch"] = (-0.10, 0.10)
+        velocity_range["yaw"] = (-0.20, 0.20)
