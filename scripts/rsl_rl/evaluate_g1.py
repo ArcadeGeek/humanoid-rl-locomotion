@@ -112,6 +112,222 @@ def _rmse(actual: np.ndarray, desired: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(actual - desired))))
 
 
+def _quat_wxyz_to_euler_xyz(
+    quaternion_wxyz: list[float],
+) -> tuple[float, float, float]:
+    """Convert a WXYZ quaternion to XYZ roll, pitch and yaw."""
+
+    w, x, y, z = quaternion_wxyz
+    sin_roll_cos_pitch = 2.0 * (w * x + y * z)
+    cos_roll_cos_pitch = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sin_roll_cos_pitch, cos_roll_cos_pitch)
+
+    sin_pitch = 2.0 * (w * y - z * x)
+    pitch = math.asin(max(-1.0, min(1.0, sin_pitch)))
+
+    sin_yaw_cos_pitch = 2.0 * (w * z + x * y)
+    cos_yaw_cos_pitch = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
+    return roll, pitch, yaw
+
+
+def _distribution_summary(values: np.ndarray) -> dict[str, float]:
+    """Return reusable scalar distribution statistics."""
+
+    absolute = np.abs(values)
+    return {
+        "mean": _mean(values),
+        "std": _std(values),
+        "p05": float(np.quantile(values, 0.05)),
+        "median": float(np.quantile(values, 0.50)),
+        "p95": float(np.quantile(values, 0.95)),
+        "min": float(np.min(values)),
+        "max": float(np.max(values)),
+        "mean_abs": _mean(absolute),
+        "rms": float(np.sqrt(np.mean(np.square(values)))),
+        "p95_abs": float(np.quantile(absolute, 0.95)),
+        "max_abs": float(np.max(absolute)),
+    }
+
+
+def _asymmetry_index(left: float, right: float) -> float:
+    """Return a bounded magnitude asymmetry index when defined."""
+
+    denominator = abs(left) + abs(right)
+    if denominator <= 1.0e-12:
+        return 0.0
+    return 2.0 * abs(left - right) / denominator
+
+
+def _build_locomotion_sustainability(
+    *,
+    arrays: dict[str, np.ndarray],
+    dt: float,
+    joint_names: list[str],
+) -> dict[str, object]:
+    """Build posture, actuation and torso-stability metrics."""
+
+    joint_summaries: dict[str, object] = {}
+    aggregate: dict[str, dict[str, float]] = {}
+
+    for joint_name in joint_names:
+        position_rad = arrays[f"{joint_name}_rad"]
+        velocity_radps = arrays[f"{joint_name}_vel_radps"]
+        acceleration_radps2 = arrays[f"{joint_name}_acc_radps2"]
+        applied_torque_nm = arrays[f"{joint_name}_applied_torque_nm"]
+        computed_torque_nm = arrays[f"{joint_name}_computed_torque_nm"]
+        power_w = arrays[f"{joint_name}_mechanical_power_w"]
+
+        position_deg = np.degrees(position_rad)
+        velocity_degps = np.degrees(velocity_radps)
+        acceleration_degps2 = np.degrees(acceleration_radps2)
+        positive_power = np.maximum(power_w, 0.0)
+        negative_power = np.minimum(power_w, 0.0)
+        torque_difference = computed_torque_nm - applied_torque_nm
+
+        position_summary = _distribution_summary(position_deg)
+        velocity_summary = _distribution_summary(velocity_degps)
+        acceleration_summary = _distribution_summary(
+            acceleration_degps2
+        )
+        applied_torque_summary = _distribution_summary(
+            applied_torque_nm
+        )
+        computed_torque_summary = _distribution_summary(
+            computed_torque_nm
+        )
+        power_summary = _distribution_summary(power_w)
+
+        joint_summaries[joint_name] = {
+            "position_deg": position_summary,
+            "velocity_degps": velocity_summary,
+            "acceleration_degps2": acceleration_summary,
+            "applied_torque_nm": applied_torque_summary,
+            "computed_torque_nm": computed_torque_summary,
+            "computed_minus_applied_torque_nm": {
+                "mean_abs": _mean(np.abs(torque_difference)),
+                "rms": float(
+                    np.sqrt(np.mean(np.square(torque_difference)))
+                ),
+                "max_abs": float(np.max(np.abs(torque_difference))),
+            },
+            "mechanical_power_w": power_summary,
+            "sampled_mechanical_work_j": {
+                "positive": float(np.sum(positive_power) * dt),
+                "negative": float(np.sum(negative_power) * dt),
+                "negative_abs": float(
+                    np.sum(np.abs(negative_power)) * dt
+                ),
+                "net": float(np.sum(power_w) * dt),
+                "absolute": float(np.sum(np.abs(power_w)) * dt),
+            },
+        }
+
+        aggregate[joint_name] = {
+            "position_mean_deg": float(position_summary["mean"]),
+            "position_range_deg": float(
+                position_summary["max"] - position_summary["min"]
+            ),
+            "velocity_rms_degps": float(velocity_summary["rms"]),
+            "acceleration_p95_abs_degps2": float(
+                acceleration_summary["p95_abs"]
+            ),
+            "torque_rms_nm": float(applied_torque_summary["rms"]),
+            "absolute_work_j": float(
+                np.sum(np.abs(power_w)) * dt
+            ),
+        }
+
+    pair_names = (
+        ("hip_pitch", "left_hip_pitch_joint", "right_hip_pitch_joint"),
+        ("knee", "left_knee_joint", "right_knee_joint"),
+        ("ankle_pitch", "left_ankle_pitch_joint", "right_ankle_pitch_joint"),
+    )
+    symmetry: dict[str, object] = {}
+    for pair_label, left_name, right_name in pair_names:
+        left = aggregate[left_name]
+        right = aggregate[right_name]
+        symmetry[pair_label] = {
+            "position_mean_left_minus_right_deg": (
+                left["position_mean_deg"] - right["position_mean_deg"]
+            ),
+            "position_range_asymmetry_index": _asymmetry_index(
+                left["position_range_deg"], right["position_range_deg"]
+            ),
+            "velocity_rms_asymmetry_index": _asymmetry_index(
+                left["velocity_rms_degps"], right["velocity_rms_degps"]
+            ),
+            "acceleration_p95_abs_asymmetry_index": (
+                _asymmetry_index(
+                    left["acceleration_p95_abs_degps2"],
+                    right["acceleration_p95_abs_degps2"],
+                )
+            ),
+            "torque_rms_asymmetry_index": _asymmetry_index(
+                left["torque_rms_nm"], right["torque_rms_nm"]
+            ),
+            "absolute_work_asymmetry_index": _asymmetry_index(
+                left["absolute_work_j"], right["absolute_work_j"]
+            ),
+        }
+
+    torso_roll_deg = np.degrees(arrays["torso_roll_rad"])
+    torso_pitch_deg = np.degrees(arrays["torso_pitch_rad"])
+    torso_ang_speed = arrays["torso_ang_speed_radps"]
+    projected_gravity_x = arrays["projected_gravity_x"]
+    projected_gravity_y = arrays["projected_gravity_y"]
+    projected_gravity_z = arrays["projected_gravity_z"]
+    root_tilt_rad = np.arctan2(
+        np.sqrt(
+            np.square(projected_gravity_x)
+            + np.square(projected_gravity_y)
+        ),
+        np.maximum(-projected_gravity_z, 1.0e-12),
+    )
+    root_tilt_deg = np.degrees(root_tilt_rad)
+
+    total_absolute_work_j = float(
+        sum(
+            aggregate[name]["absolute_work_j"]
+            for name in joint_names
+        )
+    )
+
+    return {
+        "method": {
+            "sample_period_s": dt,
+            "sample_rate_hz": 1.0 / dt,
+            "power_definition": (
+                "applied_torque_nm * joint_velocity_radps"
+            ),
+            "sampled_work_integration": (
+                "rectangle rule at evaluator policy sample rate"
+            ),
+            "sampled_work_limitation": (
+                "not resolved at the physics-step frequency"
+            ),
+            "acceleration_asymmetry_statistic": (
+                "p95 absolute joint acceleration"
+            ),
+        },
+        "joint_count": len(joint_names),
+        "joint_names": list(joint_names),
+        "joints": joint_summaries,
+        "left_right_symmetry": symmetry,
+        "six_joint_sampled_total_absolute_work_j": total_absolute_work_j,
+        "torso": {
+            "roll_deg": _distribution_summary(torso_roll_deg),
+            "pitch_deg": _distribution_summary(torso_pitch_deg),
+            "angular_speed_radps": _distribution_summary(
+                torso_ang_speed
+            ),
+        },
+        "root_tilt_deg_from_projected_gravity": (
+            _distribution_summary(root_tilt_deg)
+        ),
+    }
+
+
 def _signal_recovery_summary(
     *,
     post_times: np.ndarray,
@@ -392,6 +608,11 @@ def _build_summary(
         dt=dt,
         controlled_push=controlled_push,
     )
+    locomotion_sustainability = _build_locomotion_sustainability(
+        arrays=arrays,
+        dt=dt,
+        joint_names=joint_names,
+    )
 
     x = arrays["world_x_m"]
     y = arrays["world_y_m"]
@@ -416,7 +637,7 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
@@ -477,6 +698,7 @@ def _build_summary(
             "max_m": float(np.max(arrays["root_height_m"])),
         },
         "posture_joints": posture_summary,
+        "locomotion_sustainability": locomotion_sustainability,
     }
 
 
@@ -633,6 +855,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     f"Requested={posture_joint_names}, resolved={resolved_joint_names}"
                 )
 
+            torso_body_ids, resolved_torso_body_names = robot.find_bodies(
+                ["torso_link"],
+                preserve_order=True,
+            )
+            if resolved_torso_body_names != ["torso_link"]:
+                raise RuntimeError(
+                    "Unexpected torso body resolution. "
+                    f"Resolved={resolved_torso_body_names}"
+                )
+            torso_body_id = int(torso_body_ids[0])
+
             dt = float(base_env.step_dt)
             warmup_steps = int(round(args_cli.warmup_s / dt))
             requested_steps = max(1, int(round(args_cli.duration_s / dt)))
@@ -733,6 +966,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 root_ang_vel_b = _cpu_values(_torch(robot.data.root_ang_vel_b)[0])
                 heading = float(_torch(robot.data.heading_w)[0].detach().cpu().item())
                 posture = _cpu_values(_torch(robot.data.joint_pos)[0, posture_joint_ids])
+                posture_vel = _cpu_values(
+                    _torch(robot.data.joint_vel)[0, posture_joint_ids]
+                )
+                posture_acc = _cpu_values(
+                    _torch(robot.data.joint_acc)[0, posture_joint_ids]
+                )
+                posture_applied_torque = _cpu_values(
+                    _torch(robot.data.applied_torque)[0, posture_joint_ids]
+                )
+                posture_computed_torque = _cpu_values(
+                    _torch(robot.data.computed_torque)[0, posture_joint_ids]
+                )
+                projected_gravity = _cpu_values(
+                    _torch(robot.data.projected_gravity_b)[0]
+                )
+                torso_quat_w = _cpu_values(
+                    _torch(robot.data.body_quat_w)[0, torso_body_id]
+                )
+                torso_ang_vel_w = _cpu_values(
+                    _torch(robot.data.body_ang_vel_w)[0, torso_body_id]
+                )
+                torso_roll, torso_pitch, torso_yaw = (
+                    _quat_wxyz_to_euler_xyz(torso_quat_w)
+                )
 
                 record: dict[str, float] = {
                     "time_s": float((measurement_index + 1) * dt),
@@ -753,6 +1010,44 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 }
                 for name, value in zip(resolved_joint_names, posture, strict=True):
                     record[f"{name}_rad"] = value
+                for index, joint_name in enumerate(resolved_joint_names):
+                    record[f"{joint_name}_vel_radps"] = posture_vel[index]
+                    record[f"{joint_name}_acc_radps2"] = posture_acc[index]
+                    record[
+                        f"{joint_name}_applied_torque_nm"
+                    ] = posture_applied_torque[index]
+                    record[
+                        f"{joint_name}_computed_torque_nm"
+                    ] = posture_computed_torque[index]
+                    record[
+                        f"{joint_name}_mechanical_power_w"
+                    ] = (
+                        posture_applied_torque[index]
+                        * posture_vel[index]
+                    )
+
+                record.update(
+                    {
+                        "projected_gravity_x": projected_gravity[0],
+                        "projected_gravity_y": projected_gravity[1],
+                        "projected_gravity_z": projected_gravity[2],
+                        "torso_roll_rad": torso_roll,
+                        "torso_pitch_rad": torso_pitch,
+                        "torso_yaw_rad": torso_yaw,
+                        "torso_ang_vel_world_x_radps": (
+                            torso_ang_vel_w[0]
+                        ),
+                        "torso_ang_vel_world_y_radps": (
+                            torso_ang_vel_w[1]
+                        ),
+                        "torso_ang_vel_world_z_radps": (
+                            torso_ang_vel_w[2]
+                        ),
+                        "torso_ang_speed_radps": float(
+                            np.linalg.norm(torso_ang_vel_w)
+                        ),
+                    }
+                )
                 records.append(record)
 
                 if measurement_index % print_every_steps == 0 or measurement_index == requested_steps - 1:
