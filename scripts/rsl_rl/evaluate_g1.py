@@ -112,6 +112,258 @@ def _rmse(actual: np.ndarray, desired: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(actual - desired))))
 
 
+def _signal_recovery_summary(
+    *,
+    post_times: np.ndarray,
+    post_values: np.ndarray,
+    reference_values: np.ndarray,
+    push_time_s: float,
+    fixed_floor: float,
+    baseline_rms_multiplier: float,
+    peak_search_window_s: float,
+    recovery_hold_s: float,
+    dt: float,
+) -> dict[str, object]:
+    """Summarize one post-push signal relative to its pre-push behavior."""
+
+    reference_mean = _mean(reference_values)
+    reference_std = _std(reference_values)
+    reference_abs_deviation = np.abs(reference_values - reference_mean)
+    reference_mean_abs_deviation = _mean(reference_abs_deviation)
+    reference_p95 = float(np.quantile(reference_abs_deviation, 0.95))
+    recovery_rms_tolerance = max(
+        float(fixed_floor),
+        float(baseline_rms_multiplier) * reference_std,
+    )
+
+    signed_deviation = post_values - reference_mean
+    absolute_deviation = np.abs(signed_deviation)
+    peak_limit_s = push_time_s + peak_search_window_s
+    peak_candidates = np.flatnonzero(post_times <= peak_limit_s + 1.0e-12)
+    if len(peak_candidates) == 0:
+        peak_candidates = np.asarray([0], dtype=np.int64)
+    peak_index = int(
+        peak_candidates[int(np.argmax(absolute_deviation[peak_candidates]))]
+    )
+
+    recovery_hold_steps = max(1, int(math.ceil(recovery_hold_s / dt)))
+    recovery_time_s: float | None = None
+    recovery_window_start_s: float | None = None
+    qualifying_rms: float | None = None
+    rolling_rms_values: list[float] = []
+
+    final_start = len(signed_deviation) - recovery_hold_steps
+    if final_start >= peak_index:
+        for start in range(peak_index, final_start + 1):
+            window = signed_deviation[start : start + recovery_hold_steps]
+            window_rms = float(np.sqrt(np.mean(np.square(window))))
+            rolling_rms_values.append(window_rms)
+            if recovery_time_s is None and window_rms <= recovery_rms_tolerance:
+                end = start + recovery_hold_steps - 1
+                recovery_window_start_s = max(
+                    0.0, float(post_times[start] - push_time_s)
+                )
+                recovery_time_s = max(
+                    0.0, float(post_times[end] - push_time_s)
+                )
+                qualifying_rms = window_rms
+
+    excess_above_band = np.maximum(
+        absolute_deviation - recovery_rms_tolerance,
+        0.0,
+    )
+
+    return {
+        "reference_mean": reference_mean,
+        "reference_std": reference_std,
+        "reference_mean_abs_deviation": reference_mean_abs_deviation,
+        "reference_p95_abs_deviation": reference_p95,
+        "baseline_rms_multiplier": baseline_rms_multiplier,
+        "recovery_rms_tolerance": recovery_rms_tolerance,
+        "peak_search_window_s": peak_search_window_s,
+        "peak_value": float(post_values[peak_index]),
+        "peak_abs_deviation_from_reference": float(
+            absolute_deviation[peak_index]
+        ),
+        "peak_time_after_push_s": max(
+            0.0, float(post_times[peak_index] - push_time_s)
+        ),
+        "integrated_abs_deviation": float(
+            np.sum(absolute_deviation) * dt
+        ),
+        "integrated_excess_above_recovery_band": float(
+            np.sum(excess_above_band) * dt
+        ),
+        "minimum_rolling_rms_after_peak": (
+            min(rolling_rms_values) if rolling_rms_values else None
+        ),
+        "recovered": recovery_time_s is not None,
+        "recovery_window_start_s": recovery_window_start_s,
+        "recovery_time_s": recovery_time_s,
+        "qualifying_window_rms": qualifying_rms,
+        "recovery_hold_s": recovery_hold_steps * dt,
+    }
+
+
+def _build_post_push_recovery(
+    *,
+    arrays: dict[str, np.ndarray],
+    dt: float,
+    controlled_push: dict[str, object],
+) -> dict[str, object]:
+    """Build temporal recovery metrics for one controlled push."""
+
+    reference_window_s = 1.0
+    peak_search_window_s = 2.0
+    recovery_hold_s = 0.5
+    baseline_rms_multiplier = 1.25
+    height_window_s = 2.0
+    result: dict[str, object] = {
+        "available": False,
+        "reason": None,
+        "method": {
+            "pre_push_reference_window_s": reference_window_s,
+            "peak_search_window_s": peak_search_window_s,
+            "recovery_hold_s": recovery_hold_s,
+            "threshold_definition": (
+                "max(fixed_floor, baseline_rms_multiplier * pre_push_std)"
+            ),
+            "baseline_rms_multiplier": baseline_rms_multiplier,
+            "lateral_velocity_fixed_floor_mps": 0.05,
+            "yaw_rate_fixed_floor_radps": 0.10,
+        },
+    }
+
+    if not bool(controlled_push["requested"]):
+        result["reason"] = "no_controlled_push_requested"
+        return result
+    if not bool(controlled_push["applied"]):
+        result["reason"] = "controlled_push_not_applied"
+        return result
+
+    marker_indices = np.flatnonzero(arrays["controlled_push_applied"] > 0.5)
+    if len(marker_indices) != 1:
+        result["reason"] = "expected_exactly_one_push_marker"
+        result["push_marker_count"] = int(len(marker_indices))
+        return result
+
+    effective_time = controlled_push["effective_time_s"]
+    if effective_time is None:
+        result["reason"] = "missing_effective_push_time"
+        return result
+
+    push_time_s = float(effective_time)
+    push_index = int(marker_indices[0])
+    times = arrays["time_s"]
+    reference_steps = max(2, int(round(reference_window_s / dt)))
+    pre_start = max(0, push_index - reference_steps)
+    pre_indices = np.arange(pre_start, push_index, dtype=np.int64)
+    if len(pre_indices) < 2:
+        result["reason"] = "insufficient_pre_push_samples"
+        result["pre_push_samples"] = int(len(pre_indices))
+        return result
+
+    post_slice = slice(push_index, len(times))
+    post_times = times[post_slice]
+    if len(post_times) == 0:
+        result["reason"] = "no_post_push_samples"
+        return result
+
+    lateral_recovery = _signal_recovery_summary(
+        post_times=post_times,
+        post_values=arrays["base_vy_mps"][post_slice],
+        reference_values=arrays["base_vy_mps"][pre_indices],
+        push_time_s=push_time_s,
+        fixed_floor=0.05,
+        baseline_rms_multiplier=baseline_rms_multiplier,
+        peak_search_window_s=peak_search_window_s,
+        recovery_hold_s=recovery_hold_s,
+        dt=dt,
+    )
+    yaw_recovery = _signal_recovery_summary(
+        post_times=post_times,
+        post_values=arrays["base_wz_radps"][post_slice],
+        reference_values=arrays["base_wz_radps"][pre_indices],
+        push_time_s=push_time_s,
+        fixed_floor=0.10,
+        baseline_rms_multiplier=baseline_rms_multiplier,
+        peak_search_window_s=peak_search_window_s,
+        recovery_hold_s=recovery_hold_s,
+        dt=dt,
+    )
+
+    world_y = arrays["world_y_m"]
+    heading_unwrapped = np.unwrap(arrays["heading_rad"])
+    reference_index = max(0, push_index - 1)
+    reference_y = float(world_y[reference_index])
+    reference_heading = float(heading_unwrapped[reference_index])
+    post_y_relative = world_y[post_slice] - reference_y
+    post_heading_relative = heading_unwrapped[post_slice] - reference_heading
+    lateral_path = np.concatenate(([reference_y], world_y[post_slice]))
+
+    height_mask = post_times <= push_time_s + height_window_s + 1.0e-12
+    height_values = arrays["root_height_m"][post_slice][height_mask]
+    height_times = post_times[height_mask]
+    pre_height_mean = _mean(arrays["root_height_m"][pre_indices])
+    min_height_index = int(np.argmin(height_values))
+    minimum_height = float(height_values[min_height_index])
+
+    result.update(
+        {
+            "available": True,
+            "reason": None,
+            "effective_push_time_s": push_time_s,
+            "push_marker_sample_time_s": float(times[push_index]),
+            "pre_push_samples": int(len(pre_indices)),
+            "post_push_samples": int(len(post_times)),
+            "post_push_observation_s": max(
+                0.0, float(times[-1] - push_time_s)
+            ),
+            "lateral_velocity_body": {
+                "units": "m/s",
+                **lateral_recovery,
+            },
+            "yaw_rate_body": {
+                "units": "rad/s",
+                **yaw_recovery,
+            },
+            "trajectory_after_push": {
+                "reference_world_y_m": reference_y,
+                "final_lateral_displacement_m": float(post_y_relative[-1]),
+                "max_abs_lateral_displacement_m": float(
+                    np.max(np.abs(post_y_relative))
+                ),
+                "lateral_path_length_m": float(
+                    np.sum(np.abs(np.diff(lateral_path)))
+                ),
+                "reference_heading_deg": float(
+                    np.degrees(reference_heading)
+                ),
+                "final_heading_change_deg": float(
+                    np.degrees(post_heading_relative[-1])
+                ),
+                "max_abs_heading_change_deg": float(
+                    np.degrees(np.max(np.abs(post_heading_relative)))
+                ),
+            },
+            "vertical_response_first_2s": {
+                "requested_window_s": height_window_s,
+                "observed_window_s": max(
+                    0.0, float(height_times[-1] - push_time_s)
+                ),
+                "pre_push_mean_root_height_m": pre_height_mean,
+                "minimum_root_height_m": minimum_height,
+                "height_drop_from_pre_push_mean_m": max(
+                    0.0, pre_height_mean - minimum_height
+                ),
+                "time_to_minimum_s": max(
+                    0.0, float(height_times[min_height_index] - push_time_s)
+                ),
+            },
+        }
+    )
+    return result
+
 def _write_csv(path: Path, records: list[dict[str, float]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(records[0].keys()))
@@ -135,6 +387,11 @@ def _build_summary(
     terminated_stage: str | None,
 ) -> dict:
     arrays = {name: np.asarray([row[name] for row in records], dtype=np.float64) for name in records[0]}
+    post_push_recovery = _build_post_push_recovery(
+        arrays=arrays,
+        dt=dt,
+        controlled_push=controlled_push,
+    )
 
     x = arrays["world_x_m"]
     y = arrays["world_y_m"]
@@ -159,12 +416,13 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
         "initial_state": initial_state,
         "controlled_push": controlled_push,
+        "post_push_recovery": post_push_recovery,
         "checkpoint": {
             "path": os.path.abspath(checkpoint),
             "sha256": checkpoint_hash,
