@@ -58,6 +58,10 @@ parser.add_argument("--duration_s", type=float, default=20.0, help="Measured sim
 parser.add_argument("--print_every_s", type=float, default=1.0, help="Live telemetry interval in seconds.")
 parser.add_argument("--label", type=str, default=None, help="Human-readable label for the result directory.")
 parser.add_argument("--output_dir", type=str, default=None, help="Optional exact result directory.")
+parser.add_argument("--push_time_s", type=float, default=None, help="Measurement-relative time for one controlled impulse.")
+parser.add_argument("--push_vx_mps", type=float, default=0.0, help="World-X root linear-velocity delta.")
+parser.add_argument("--push_vy_mps", type=float, default=0.0, help="World-Y root linear-velocity delta.")
+parser.add_argument("--push_wz_radps", type=float, default=0.0, help="World-Z root angular-velocity delta.")
 cli_args.add_rsl_rl_args(parser)
 add_launcher_args(parser)
 args_cli, remaining_args = setup_preset_cli(parser)
@@ -126,6 +130,7 @@ def _build_summary(
     checkpoint_hash: str,
     seed: int,
     initial_state: dict[str, object],
+    controlled_push: dict[str, object],
     joint_names: list[str],
     terminated_stage: str | None,
 ) -> dict:
@@ -154,11 +159,12 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
         "initial_state": initial_state,
+        "controlled_push": controlled_push,
         "checkpoint": {
             "path": os.path.abspath(checkpoint),
             "sha256": checkpoint_hash,
@@ -287,6 +293,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
     if args_cli.print_every_s <= 0.0:
         raise ValueError("--print_every_s must be positive.")
 
+    push_delta = (float(args_cli.push_vx_mps), float(args_cli.push_vy_mps), float(args_cli.push_wz_radps))
+    push_requested = args_cli.push_time_s is not None
+    if not push_requested and any(abs(value) > 0.0 for value in push_delta):
+        raise ValueError("--push_time_s is required when a push delta is non-zero.")
+    if push_requested:
+        if not 0.0 <= float(args_cli.push_time_s) < float(args_cli.duration_s):
+            raise ValueError("--push_time_s must satisfy 0 <= push_time_s < duration_s.")
+        if not any(abs(value) > 0.0 for value in push_delta):
+            raise ValueError("At least one controlled push delta must be non-zero.")
+
     with launch_simulation(env_cfg, args_cli):
         agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
         agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, installed_version)
@@ -364,6 +380,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
             requested_steps = max(1, int(round(args_cli.duration_s / dt)))
             print_every_steps = max(1, int(round(args_cli.print_every_s / dt)))
             total_steps = warmup_steps + requested_steps
+            push_measurement_step = int(round(float(args_cli.push_time_s) / dt)) if push_requested else None
+            if push_measurement_step is not None and push_measurement_step >= requested_steps:
+                raise ValueError("Rounded push step falls outside the measurement window.")
+            controlled_push: dict[str, object] = {
+                "requested": push_requested,
+                "applied": False,
+                "requested_time_s": float(args_cli.push_time_s) if push_requested else None,
+                "effective_time_s": push_measurement_step * dt if push_measurement_step is not None else None,
+                "delta_root_velocity_world": {"x_mps": push_delta[0], "y_mps": push_delta[1], "yaw_radps": push_delta[2]},
+                "before_root_velocity_world": None,
+                "after_root_velocity_world": None,
+            }
 
             print(
                 f"[INFO] dt={dt:.6f} s, warmup={warmup_steps} steps, "
@@ -400,6 +428,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
             terminated_stage: str | None = None
 
             for step in range(total_steps):
+                push_applied_this_step = False
+                measurement_step = step - warmup_steps
+                if push_measurement_step is not None and measurement_step == push_measurement_step:
+                    root_velocity_w = _torch(robot.data.root_vel_w)[0].detach().clone()
+                    before_velocity_w = _cpu_values(root_velocity_w)
+                    root_velocity_w[0] += push_delta[0]
+                    root_velocity_w[1] += push_delta[1]
+                    root_velocity_w[5] += push_delta[2]
+                    push_env_ids = torch.tensor([0], device=root_velocity_w.device, dtype=torch.long)
+                    robot.write_root_velocity_to_sim_index(root_velocity=root_velocity_w.unsqueeze(0), env_ids=push_env_ids)
+                    obs = env.get_observations()
+                    after_velocity_w = _cpu_values(_torch(robot.data.root_vel_w)[0])
+                    controlled_push["applied"] = True
+                    controlled_push["before_root_velocity_world"] = {
+                        "x_mps": before_velocity_w[0], "y_mps": before_velocity_w[1], "z_mps": before_velocity_w[2],
+                        "roll_radps": before_velocity_w[3], "pitch_radps": before_velocity_w[4], "yaw_radps": before_velocity_w[5],
+                    }
+                    controlled_push["after_root_velocity_world"] = {
+                        "x_mps": after_velocity_w[0], "y_mps": after_velocity_w[1], "z_mps": after_velocity_w[2],
+                        "roll_radps": after_velocity_w[3], "pitch_radps": after_velocity_w[4], "yaw_radps": after_velocity_w[5],
+                    }
+                    push_applied_this_step = True
+                    print(f"[PUSH] t={controlled_push['effective_time_s']:.3f}s delta_world=({push_delta[0]:+.3f}, {push_delta[1]:+.3f}, {push_delta[2]:+.3f})")
+
                 with torch.inference_mode():
                     actions = policy(obs)
                     obs, _, dones, _ = env.step(actions)
@@ -439,6 +491,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     "world_y_m": root_pos[1],
                     "root_height_m": root_pos[2],
                     "heading_rad": heading,
+                    "controlled_push_applied": 1.0 if push_applied_this_step else 0.0,
                 }
                 for name, value in zip(resolved_joint_names, posture, strict=True):
                     record[f"{name}_rad"] = value
@@ -469,6 +522,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 checkpoint_hash=checkpoint_hash,
                 seed=int(env_cfg.seed),
                 initial_state=initial_state,
+                controlled_push=controlled_push,
                 joint_names=resolved_joint_names,
                 terminated_stage=terminated_stage,
             )
