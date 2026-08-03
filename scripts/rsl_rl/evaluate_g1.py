@@ -112,6 +112,129 @@ def _rmse(actual: np.ndarray, desired: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(actual - desired))))
 
 
+def _quat_xyzw_to_wxyz(
+    quaternion_xyzw: list[float] | np.ndarray,
+) -> np.ndarray:
+    """Convert an XYZW quaternion to normalized WXYZ form."""
+
+    quaternion = np.asarray(
+        quaternion_xyzw,
+        dtype=np.float64,
+    ).reshape(4)
+    return _normalize_quat_wxyz(
+        np.asarray(
+            [
+                quaternion[3],
+                quaternion[0],
+                quaternion[1],
+                quaternion[2],
+            ],
+            dtype=np.float64,
+        )
+    )
+
+
+def _normalize_quat_wxyz(
+    quaternion_wxyz: list[float] | np.ndarray,
+) -> np.ndarray:
+    """Return a normalized WXYZ quaternion as float64."""
+
+    quaternion = np.asarray(
+        quaternion_wxyz,
+        dtype=np.float64,
+    ).reshape(4)
+    norm = float(np.linalg.norm(quaternion))
+    if norm <= 1.0e-12:
+        raise ValueError("Quaternion norm is zero.")
+    return quaternion / norm
+
+
+def _quat_wxyz_conjugate(
+    quaternion_wxyz: list[float] | np.ndarray,
+) -> np.ndarray:
+    """Return the conjugate of a normalized WXYZ quaternion."""
+
+    quaternion = _normalize_quat_wxyz(quaternion_wxyz)
+    return np.asarray(
+        [
+            quaternion[0],
+            -quaternion[1],
+            -quaternion[2],
+            -quaternion[3],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _quat_wxyz_multiply(
+    left_wxyz: list[float] | np.ndarray,
+    right_wxyz: list[float] | np.ndarray,
+) -> np.ndarray:
+    """Hamilton product of normalized WXYZ quaternions."""
+
+    left = _normalize_quat_wxyz(left_wxyz)
+    right = _normalize_quat_wxyz(right_wxyz)
+    lw, lx, ly, lz = left
+    rw, rx, ry, rz = right
+    product = np.asarray(
+        [
+            lw * rw - lx * rx - ly * ry - lz * rz,
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+        ],
+        dtype=np.float64,
+    )
+    return _normalize_quat_wxyz(product)
+
+
+def _quat_wxyz_rotate_vector(
+    quaternion_wxyz: list[float] | np.ndarray,
+    vector_xyz: list[float] | np.ndarray,
+) -> np.ndarray:
+    """Rotate a vector with a body-to-world WXYZ quaternion."""
+
+    quaternion = _normalize_quat_wxyz(quaternion_wxyz)
+    vector = np.asarray(vector_xyz, dtype=np.float64).reshape(3)
+    scalar = quaternion[0]
+    axis = quaternion[1:]
+    return (
+        vector
+        + 2.0
+        * np.cross(
+            axis,
+            np.cross(axis, vector) + scalar * vector,
+        )
+    )
+
+
+def _angle_between_vectors_rad(
+    left_xyz: list[float] | np.ndarray,
+    right_xyz: list[float] | np.ndarray,
+) -> float:
+    """Return the unsigned angle between non-zero vectors."""
+
+    left = np.asarray(left_xyz, dtype=np.float64).reshape(3)
+    right = np.asarray(right_xyz, dtype=np.float64).reshape(3)
+    denominator = float(
+        np.linalg.norm(left) * np.linalg.norm(right)
+    )
+    if denominator <= 1.0e-12:
+        raise ValueError("Cannot compare zero-length vectors.")
+    cosine = float(np.dot(left, right) / denominator)
+    return math.acos(max(-1.0, min(1.0, cosine)))
+
+
+def _quat_wxyz_rotation_angle_rad(
+    quaternion_wxyz: list[float] | np.ndarray,
+) -> float:
+    """Return the shortest unsigned rotation angle in [0, pi]."""
+
+    quaternion = _normalize_quat_wxyz(quaternion_wxyz)
+    scalar = abs(float(quaternion[0]))
+    return 2.0 * math.acos(max(0.0, min(1.0, scalar)))
+
+
 def _quat_wxyz_to_euler_xyz(
     quaternion_wxyz: list[float],
 ) -> tuple[float, float, float]:
@@ -286,6 +409,54 @@ def _build_locomotion_sustainability(
     )
     root_tilt_deg = np.degrees(root_tilt_rad)
 
+    root_world_up_tilt_deg = np.degrees(
+        arrays["root_world_up_tilt_rad"]
+    )
+    torso_world_up_tilt_deg = np.degrees(
+        arrays["torso_world_up_tilt_rad"]
+    )
+    torso_root_up_axis_angle_deg = np.degrees(
+        arrays["torso_root_up_axis_angle_rad"]
+    )
+    torso_root_relative_rotation_deg = np.degrees(
+        arrays["torso_root_relative_rotation_rad"]
+    )
+    torso_root_relative_quaternions = np.column_stack(
+        [
+            arrays["torso_root_relative_quat_w"],
+            arrays["torso_root_relative_quat_x"],
+            arrays["torso_root_relative_quat_y"],
+            arrays["torso_root_relative_quat_z"],
+        ]
+    ).astype(np.float64, copy=False)
+    relative_norms = np.linalg.norm(
+        torso_root_relative_quaternions,
+        axis=1,
+        keepdims=True,
+    )
+    if np.any(relative_norms <= 1.0e-12):
+        raise ValueError(
+            "Zero-norm torso/root relative quaternion in records."
+        )
+    torso_root_relative_quaternions = (
+        torso_root_relative_quaternions / relative_norms
+    )
+    relative_reference = torso_root_relative_quaternions[0]
+    relative_reference_dots = np.abs(
+        torso_root_relative_quaternions @ relative_reference
+    )
+    relative_reference_dots = np.clip(
+        relative_reference_dots,
+        0.0,
+        1.0,
+    )
+    torso_root_relative_delta_from_first_sample_deg = np.degrees(
+        2.0 * np.arccos(relative_reference_dots)
+    )
+    root_tilt_quaternion_minus_projected_gravity_deg = (
+        root_world_up_tilt_deg - root_tilt_deg
+    )
+
     total_absolute_work_j = float(
         sum(
             aggregate[name]["absolute_work_j"]
@@ -321,9 +492,53 @@ def _build_locomotion_sustainability(
             "angular_speed_radps": _distribution_summary(
                 torso_ang_speed
             ),
+            "world_up_tilt_deg": _distribution_summary(
+                torso_world_up_tilt_deg
+            ),
+            "root_up_axis_angle_deg": _distribution_summary(
+                torso_root_up_axis_angle_deg
+            ),
+            "root_relative_rotation_deg": _distribution_summary(
+                torso_root_relative_rotation_deg
+            ),
+            "root_relative_delta_from_first_sample_deg": (
+                _distribution_summary(
+                    torso_root_relative_delta_from_first_sample_deg
+                )
+            ),
+            "orientation_method": {
+                "source_quaternion_component_order": "XYZW",
+                "internal_quaternion_component_order": "WXYZ",
+                "component_order_validation": (
+                    "root quaternion tilt matched projected gravity"
+                ),
+                "primary_yaw_invariant_tilt": (
+                    "angle between torso and root local +Z axes"
+                ),
+                "world_up_tilt": (
+                    "angle between torso local +Z and world +Z"
+                ),
+                "relative_rotation": (
+                    "shortest rotation of inverse(root) * torso"
+                ),
+                "relative_delta_reference": (
+                    "first measured sample; removes constant frame offset"
+                ),
+                "legacy_euler_roll_pitch_status": (
+                    "frame-dependent diagnostic, not primary tilt metric"
+                ),
+            },
         },
         "root_tilt_deg_from_projected_gravity": (
             _distribution_summary(root_tilt_deg)
+        ),
+        "root_tilt_deg_from_quaternion": _distribution_summary(
+            root_world_up_tilt_deg
+        ),
+        "root_tilt_quaternion_minus_projected_gravity_deg": (
+            _distribution_summary(
+                root_tilt_quaternion_minus_projected_gravity_deg
+            )
         ),
     }
 
@@ -831,7 +1046,7 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
@@ -1221,11 +1436,51 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 torso_quat_w = _cpu_values(
                     _torch(robot.data.body_quat_w)[0, torso_body_id]
                 )
+                torso_quat_w = _quat_xyzw_to_wxyz(torso_quat_w)
                 torso_ang_vel_w = _cpu_values(
                     _torch(robot.data.body_ang_vel_w)[0, torso_body_id]
                 )
                 torso_roll, torso_pitch, torso_yaw = (
                     _quat_wxyz_to_euler_xyz(torso_quat_w)
+                )
+                root_quat_w = _cpu_values(
+                    _torch(robot.data.root_quat_w)[0]
+                )
+                root_quat_w = _quat_xyzw_to_wxyz(root_quat_w)
+                world_up = np.asarray(
+                    [0.0, 0.0, 1.0],
+                    dtype=np.float64,
+                )
+                root_up_w = _quat_wxyz_rotate_vector(
+                    root_quat_w,
+                    world_up,
+                )
+                torso_up_w = _quat_wxyz_rotate_vector(
+                    torso_quat_w,
+                    world_up,
+                )
+                root_world_up_tilt_rad = _angle_between_vectors_rad(
+                    root_up_w,
+                    world_up,
+                )
+                torso_world_up_tilt_rad = _angle_between_vectors_rad(
+                    torso_up_w,
+                    world_up,
+                )
+                torso_root_up_axis_angle_rad = (
+                    _angle_between_vectors_rad(
+                        torso_up_w,
+                        root_up_w,
+                    )
+                )
+                torso_root_relative_quat = _quat_wxyz_multiply(
+                    _quat_wxyz_conjugate(root_quat_w),
+                    torso_quat_w,
+                )
+                torso_root_relative_rotation_rad = (
+                    _quat_wxyz_rotation_angle_rad(
+                        torso_root_relative_quat
+                    )
                 )
                 foot_net_forces_w = np.asarray(
                     _cpu_values(_torch(contact_sensor.data.net_forces_w)[0, foot_contact_sensor_body_ids]),
@@ -1301,6 +1556,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                         ),
                         "torso_ang_speed_radps": float(
                             np.linalg.norm(torso_ang_vel_w)
+                        ),
+                        "root_world_up_tilt_rad": (
+                            root_world_up_tilt_rad
+                        ),
+                        "torso_world_up_tilt_rad": (
+                            torso_world_up_tilt_rad
+                        ),
+                        "torso_root_up_axis_angle_rad": (
+                            torso_root_up_axis_angle_rad
+                        ),
+                        "torso_root_relative_rotation_rad": (
+                            torso_root_relative_rotation_rad
+                        ),
+                        "torso_root_relative_quat_w": (
+                            torso_root_relative_quat[0]
+                        ),
+                        "torso_root_relative_quat_x": (
+                            torso_root_relative_quat[1]
+                        ),
+                        "torso_root_relative_quat_y": (
+                            torso_root_relative_quat[2]
+                        ),
+                        "torso_root_relative_quat_z": (
+                            torso_root_relative_quat[3]
                         ),
                         "left_foot_normal_force_n": float(foot_normal_forces[0]),
                         "right_foot_normal_force_n": float(foot_normal_forces[1]),
