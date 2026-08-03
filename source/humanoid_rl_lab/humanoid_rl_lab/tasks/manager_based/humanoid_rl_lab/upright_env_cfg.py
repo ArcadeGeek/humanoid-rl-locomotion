@@ -11,7 +11,10 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.config.g1.rough_env_cfg import G1Rewards
 
 from .humanoid_rl_lab_env_cfg import HumanoidRlLabEnvCfg
-from .mdp.upright_rewards import knee_flexion_above_threshold_l2
+from .mdp.upright_rewards import (
+    knee_flexion_above_threshold_l2,
+    track_heading_target_exp,
+)
 
 
 @configclass
@@ -37,3 +40,33 @@ class HumanoidRlLabG1UprightEnvCfg(HumanoidRlLabEnvCfg):
     """Fine-tuning task with the validated 123D/37D policy interface unchanged."""
 
     rewards: HumanoidRlLabG1UprightRewardsCfg = HumanoidRlLabG1UprightRewardsCfg()
+
+
+@configclass
+class HumanoidRlLabG1UprightHeadingRewardsCfg(
+    HumanoidRlLabG1UprightRewardsCfg
+):
+    """Upright v1 rewards plus command-target heading hold."""
+
+    track_heading_target_exp = RewTerm(
+        func=track_heading_target_exp,
+        weight=0.25,
+        params={
+            "command_name": "base_velocity",
+            "std": 0.20,
+            "yaw_rate_threshold": 0.05,
+            "min_planar_speed": 0.10,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
+
+@configclass
+class HumanoidRlLabG1UprightHeadingEnvCfg(
+    HumanoidRlLabG1UprightEnvCfg
+):
+    """Upright v2 candidate with one heading-target reward."""
+
+    rewards: HumanoidRlLabG1UprightHeadingRewardsCfg = (
+        HumanoidRlLabG1UprightHeadingRewardsCfg()
+    )
