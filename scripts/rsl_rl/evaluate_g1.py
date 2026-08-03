@@ -328,6 +328,199 @@ def _build_locomotion_sustainability(
     }
 
 
+def _complete_episode_durations(
+    mask: np.ndarray,
+    *,
+    target_value: bool,
+    dt: float,
+) -> np.ndarray:
+    """Durations of runs that do not touch either measurement boundary."""
+
+    values = np.asarray(mask, dtype=bool)
+    durations: list[float] = []
+    start = 0
+    while start < len(values):
+        value = bool(values[start])
+        end = start + 1
+        while end < len(values) and bool(values[end]) == value:
+            end += 1
+        if value == target_value and start > 0 and end < len(values):
+            durations.append((end - start) * dt)
+        start = end
+    return np.asarray(durations, dtype=np.float64)
+
+
+def _duration_summary(values: np.ndarray) -> dict[str, object]:
+    if len(values) == 0:
+        return {
+            "available": False,
+            "count": 0,
+            "mean_s": None,
+            "std_s": None,
+            "median_s": None,
+            "min_s": None,
+            "max_s": None,
+        }
+    return {
+        "available": True,
+        "count": int(len(values)),
+        "mean_s": _mean(values),
+        "std_s": _std(values),
+        "median_s": float(np.quantile(values, 0.50)),
+        "min_s": float(np.min(values)),
+        "max_s": float(np.max(values)),
+    }
+
+
+def _optional_asymmetry(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return _asymmetry_index(float(left), float(right))
+
+
+def _one_foot_contact_summary(
+    *,
+    contact_mask: np.ndarray,
+    normal_force_n: np.ndarray,
+    net_force_n: np.ndarray,
+    sensor_contact_time_s: np.ndarray,
+    sensor_air_time_s: np.ndarray,
+    dt: float,
+) -> dict[str, object]:
+    contact = np.asarray(contact_mask, dtype=bool)
+    touchdowns = np.flatnonzero((~contact[:-1]) & contact[1:]) + 1
+    liftoffs = np.flatnonzero(contact[:-1] & (~contact[1:])) + 1
+    stance = _complete_episode_durations(contact, target_value=True, dt=dt)
+    swing = _complete_episode_durations(contact, target_value=False, dt=dt)
+    contact_normal = normal_force_n[contact]
+    contact_net = net_force_n[contact]
+    contact_only = (
+        {
+            "available": True,
+            "samples": int(len(contact_normal)),
+            "normal_force_n": _distribution_summary(contact_normal),
+            "net_force_magnitude_n": _distribution_summary(contact_net),
+        }
+        if len(contact_normal) > 0
+        else {
+            "available": False,
+            "samples": 0,
+            "normal_force_n": None,
+            "net_force_magnitude_n": None,
+        }
+    )
+    return {
+        "duty_factor": _mean(contact.astype(np.float64)),
+        "contact_samples": int(np.count_nonzero(contact)),
+        "air_samples": int(np.count_nonzero(~contact)),
+        "touchdown_count": int(len(touchdowns)),
+        "liftoff_count": int(len(liftoffs)),
+        "touchdown_sample_indices": [int(x) for x in touchdowns],
+        "liftoff_sample_indices": [int(x) for x in liftoffs],
+        "stance_complete_episodes": _duration_summary(stance),
+        "swing_complete_episodes": _duration_summary(swing),
+        "normal_force_all_samples_n": _distribution_summary(normal_force_n),
+        "net_force_magnitude_all_samples_n": _distribution_summary(net_force_n),
+        "contact_only_force": contact_only,
+        "sampled_normal_impulse_n_s": float(np.sum(normal_force_n) * dt),
+        "sensor_current_contact_time_s": _distribution_summary(sensor_contact_time_s),
+        "sensor_current_air_time_s": _distribution_summary(sensor_air_time_s),
+    }
+
+
+def _build_foot_contact_and_gait(
+    *, arrays: dict[str, np.ndarray], dt: float
+) -> dict[str, object]:
+    left_contact = arrays["left_foot_contact"] > 0.5
+    right_contact = arrays["right_foot_contact"] > 0.5
+    left = _one_foot_contact_summary(
+        contact_mask=left_contact,
+        normal_force_n=arrays["left_foot_normal_force_n"],
+        net_force_n=arrays["left_foot_net_force_magnitude_n"],
+        sensor_contact_time_s=arrays["left_foot_sensor_current_contact_time_s"],
+        sensor_air_time_s=arrays["left_foot_sensor_current_air_time_s"],
+        dt=dt,
+    )
+    right = _one_foot_contact_summary(
+        contact_mask=right_contact,
+        normal_force_n=arrays["right_foot_normal_force_n"],
+        net_force_n=arrays["right_foot_net_force_magnitude_n"],
+        sensor_contact_time_s=arrays["right_foot_sensor_current_contact_time_s"],
+        sensor_air_time_s=arrays["right_foot_sensor_current_air_time_s"],
+        dt=dt,
+    )
+
+    events: list[tuple[int, str]] = []
+    events += [(int(x), "left") for x in left["touchdown_sample_indices"]]
+    events += [(int(x), "right") for x in right["touchdown_sample_indices"]]
+    events.sort(key=lambda item: (item[0], item[1]))
+    sequence: list[str] = []
+    index = 0
+    while index < len(events):
+        sample_index = events[index][0]
+        same_sample: list[str] = []
+        while index < len(events) and events[index][0] == sample_index:
+            same_sample.append(events[index][1])
+            index += 1
+        if len(same_sample) == 1:
+            sequence.append(same_sample[0])
+    alternating = sum(a != b for a, b in zip(sequence, sequence[1:]))
+    repeated = sum(a == b for a, b in zip(sequence, sequence[1:]))
+    pair_count = alternating + repeated
+    duration_s = len(left_contact) * dt
+    total_touchdowns = int(left["touchdown_count"] + right["touchdown_count"])
+    left_stance = left["stance_complete_episodes"]["mean_s"]
+    right_stance = right["stance_complete_episodes"]["mean_s"]
+    left_swing = left["swing_complete_episodes"]["mean_s"]
+    right_swing = right["swing_complete_episodes"]["mean_s"]
+
+    return {
+        "method": {
+            "left_foot_body": "left_ankle_roll_link",
+            "right_foot_body": "right_ankle_roll_link",
+            "contact_signal": "absolute world-Z net contact force",
+            "contact_force_threshold_n": 20.0,
+            "sample_period_s": dt,
+            "sample_rate_hz": 1.0 / dt,
+            "duration_rule": "complete non-boundary-truncated episodes only",
+            "duty_factor_rule": "all measured samples, including boundary episodes",
+            "force_impulse_limitation": "sampled at policy rate, not physics rate",
+        },
+        "left": left,
+        "right": right,
+        "support": {
+            "double_support_fraction": _mean((left_contact & right_contact).astype(np.float64)),
+            "left_only_support_fraction": _mean((left_contact & ~right_contact).astype(np.float64)),
+            "right_only_support_fraction": _mean((right_contact & ~left_contact).astype(np.float64)),
+            "flight_fraction": _mean((~left_contact & ~right_contact).astype(np.float64)),
+        },
+        "cadence": {
+            "total_touchdowns": total_touchdowns,
+            "touchdown_event_rate_hz": total_touchdowns / duration_s,
+            "touchdown_events_per_min": 60.0 * total_touchdowns / duration_s,
+            "non_simultaneous_touchdown_sequence": sequence,
+            "alternating_pair_count": alternating,
+            "repeated_same_foot_pair_count": repeated,
+            "alternation_fraction": alternating / pair_count if pair_count else None,
+        },
+        "left_right_symmetry": {
+            "duty_factor_abs_difference": abs(float(left["duty_factor"]) - float(right["duty_factor"])),
+            "duty_factor_asymmetry_index": _asymmetry_index(float(left["duty_factor"]), float(right["duty_factor"])),
+            "complete_stance_mean_asymmetry_index": _optional_asymmetry(left_stance, right_stance),
+            "complete_swing_mean_asymmetry_index": _optional_asymmetry(left_swing, right_swing),
+            "sampled_normal_impulse_asymmetry_index": _asymmetry_index(
+                float(left["sampled_normal_impulse_n_s"]),
+                float(right["sampled_normal_impulse_n_s"]),
+            ),
+            "normal_force_rms_asymmetry_index": _asymmetry_index(
+                float(left["normal_force_all_samples_n"]["rms"]),
+                float(right["normal_force_all_samples_n"]["rms"]),
+            ),
+            "touchdown_count_left_minus_right": int(left["touchdown_count"] - right["touchdown_count"]),
+        },
+    }
+
+
 def _signal_recovery_summary(
     *,
     post_times: np.ndarray,
@@ -613,6 +806,7 @@ def _build_summary(
         dt=dt,
         joint_names=joint_names,
     )
+    foot_contact_and_gait = _build_foot_contact_and_gait(arrays=arrays, dt=dt)
 
     x = arrays["world_x_m"]
     y = arrays["world_y_m"]
@@ -637,7 +831,7 @@ def _build_summary(
     completed = len(records) == requested_steps and terminated_stage is None
 
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "status": "complete" if completed else "terminated_early",
         "task": task,
         "seed": seed,
@@ -699,6 +893,7 @@ def _build_summary(
         },
         "posture_joints": posture_summary,
         "locomotion_sustainability": locomotion_sustainability,
+        "foot_contact_and_gait": foot_contact_and_gait,
     }
 
 
@@ -866,6 +1061,48 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 )
             torso_body_id = int(torso_body_ids[0])
 
+            foot_body_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
+            _, resolved_foot_body_names = robot.find_bodies(
+                foot_body_names, preserve_order=True
+            )
+            if resolved_foot_body_names != foot_body_names:
+                raise RuntimeError(
+                    f"Unexpected foot body resolution: {resolved_foot_body_names}"
+                )
+            contact_sensor = base_env.scene["contact_forces"]
+            sensor_body_names_raw = getattr(contact_sensor, "body_names", None)
+            if sensor_body_names_raw is None:
+                raise RuntimeError(
+                    "Contact sensor does not expose body_names; "
+                    "cannot map foot contact signals safely."
+                )
+            sensor_body_names = list(sensor_body_names_raw)
+            missing_sensor_foot_names = [
+                name for name in foot_body_names
+                if name not in sensor_body_names
+            ]
+            if missing_sensor_foot_names:
+                raise RuntimeError(
+                    "Foot bodies missing from contact sensor: "
+                    f"{missing_sensor_foot_names}. "
+                    f"Sensor bodies={sensor_body_names}"
+                )
+            foot_contact_sensor_body_ids = [
+                sensor_body_names.index(name)
+                for name in foot_body_names
+            ]
+            print(
+                "[INFO] Contact sensor foot mapping: "
+                + ", ".join(
+                    f"{name}->{index}"
+                    for name, index in zip(
+                        foot_body_names,
+                        foot_contact_sensor_body_ids,
+                    )
+                )
+            )
+            foot_contact_force_threshold_n = 20.0
+
             dt = float(base_env.step_dt)
             warmup_steps = int(round(args_cli.warmup_s / dt))
             requested_steps = max(1, int(round(args_cli.duration_s / dt)))
@@ -990,6 +1227,25 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                 torso_roll, torso_pitch, torso_yaw = (
                     _quat_wxyz_to_euler_xyz(torso_quat_w)
                 )
+                foot_net_forces_w = np.asarray(
+                    _cpu_values(_torch(contact_sensor.data.net_forces_w)[0, foot_contact_sensor_body_ids]),
+                    dtype=np.float64,
+                )
+                foot_sensor_contact_time = np.asarray(
+                    _cpu_values(_torch(contact_sensor.data.current_contact_time)[0, foot_contact_sensor_body_ids]),
+                    dtype=np.float64,
+                )
+                foot_sensor_air_time = np.asarray(
+                    _cpu_values(_torch(contact_sensor.data.current_air_time)[0, foot_contact_sensor_body_ids]),
+                    dtype=np.float64,
+                )
+                foot_net_forces_w = np.asarray(
+                    foot_net_forces_w,
+                    dtype=np.float64,
+                ).reshape(2, 3)
+                foot_normal_forces = np.abs(foot_net_forces_w[:, 2])
+                foot_force_magnitudes = np.linalg.norm(foot_net_forces_w, axis=1)
+                foot_contacts = foot_normal_forces >= foot_contact_force_threshold_n
 
                 record: dict[str, float] = {
                     "time_s": float((measurement_index + 1) * dt),
@@ -1046,6 +1302,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                         "torso_ang_speed_radps": float(
                             np.linalg.norm(torso_ang_vel_w)
                         ),
+                        "left_foot_normal_force_n": float(foot_normal_forces[0]),
+                        "right_foot_normal_force_n": float(foot_normal_forces[1]),
+                        "left_foot_net_force_magnitude_n": float(foot_force_magnitudes[0]),
+                        "right_foot_net_force_magnitude_n": float(foot_force_magnitudes[1]),
+                        "left_foot_contact": 1.0 if bool(foot_contacts[0]) else 0.0,
+                        "right_foot_contact": 1.0 if bool(foot_contacts[1]) else 0.0,
+                        "left_foot_sensor_current_contact_time_s": float(foot_sensor_contact_time[0]),
+                        "right_foot_sensor_current_contact_time_s": float(foot_sensor_contact_time[1]),
+                        "left_foot_sensor_current_air_time_s": float(foot_sensor_air_time[0]),
+                        "right_foot_sensor_current_air_time_s": float(foot_sensor_air_time[1]),
                     }
                 )
                 records.append(record)
