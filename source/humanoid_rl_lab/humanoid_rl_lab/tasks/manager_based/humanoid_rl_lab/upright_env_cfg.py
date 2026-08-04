@@ -92,3 +92,15 @@ class HumanoidRlLabG1UprightHeadingDeadbandEnvCfg(HumanoidRlLabG1UprightHeadingL
         params = dict(self.rewards.track_heading_target_exp.params)
         params["deadband"] = 0.05
         self.rewards.track_heading_target_exp.params = params
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadband010EnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Same task as the 0.05-rad variant; only the deadband changes.
+
+    def __post_init__(self):
+        super().__post_init__()
+        params = dict(
+            self.rewards.track_heading_target_exp.params
+        )
+        params["deadband"] = 0.1
+        self.rewards.track_heading_target_exp.params = params
