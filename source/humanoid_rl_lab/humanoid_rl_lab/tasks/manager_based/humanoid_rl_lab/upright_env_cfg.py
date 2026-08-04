@@ -70,3 +70,11 @@ class HumanoidRlLabG1UprightHeadingEnvCfg(
     rewards: HumanoidRlLabG1UprightHeadingRewardsCfg = (
         HumanoidRlLabG1UprightHeadingRewardsCfg()
     )
+
+@configclass
+class HumanoidRlLabG1UprightHeadingLowEnvCfg(HumanoidRlLabG1UprightHeadingEnvCfg):
+    """Upright Heading candidate with reward weight 0.10."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.rewards.track_heading_target_exp.weight = 0.1
