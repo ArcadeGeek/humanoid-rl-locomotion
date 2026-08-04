@@ -125,3 +125,26 @@ def track_heading_target_exp(
         * near_zero_yaw_rate.to(dtype=heading_reward.dtype)
         * moving_command.to(dtype=heading_reward.dtype)
     )
+
+def track_heading_target_deadband_exp(env: ManagerBasedRLEnv, command_name: str, std: float, yaw_rate_threshold: float, min_planar_speed: float, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot'), deadband: float=0.05) -> torch.Tensor:
+    """Track commanded heading with an exponential reward after a symmetric angular deadband."""
+    if std <= 0.0:
+        raise ValueError(f'std must be positive, got {std}.')
+    if yaw_rate_threshold < 0.0:
+        raise ValueError(f'yaw_rate_threshold must be non-negative, got {yaw_rate_threshold}.')
+    if min_planar_speed < 0.0:
+        raise ValueError(f'min_planar_speed must be non-negative, got {min_planar_speed}.')
+    asset: Articulation = env.scene[asset_cfg.name]
+    heading_w = _as_torch_tensor(asset.data.heading_w)
+    command = _as_torch_tensor(env.command_manager.get_command(command_name))
+    command_term = env.command_manager.get_term(command_name)
+    if not hasattr(command_term, 'heading_target'):
+        raise AttributeError(f'Command term {command_name!r} does not expose heading_target.')
+    heading_target = _as_torch_tensor(command_term.heading_target)
+    heading_error = wrap_to_pi(heading_target - heading_w)
+    effective_heading_error = torch.clamp(torch.abs(heading_error) - deadband, min=0.0)
+    heading_reward = torch.exp(-torch.square(effective_heading_error / std))
+    near_zero_yaw_rate = torch.abs(command[:, 2]) < yaw_rate_threshold
+    planar_speed = torch.linalg.vector_norm(command[:, :2], dim=1)
+    moving_command = planar_speed > min_planar_speed
+    return heading_reward * near_zero_yaw_rate.to(dtype=heading_reward.dtype) * moving_command.to(dtype=heading_reward.dtype)

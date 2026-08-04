@@ -15,6 +15,7 @@ from .mdp.upright_rewards import (
     knee_flexion_above_threshold_l2,
     track_heading_target_exp,
 )
+from .mdp.upright_rewards import track_heading_target_deadband_exp
 
 
 @configclass
@@ -78,3 +79,16 @@ class HumanoidRlLabG1UprightHeadingLowEnvCfg(HumanoidRlLabG1UprightHeadingEnvCfg
     def __post_init__(self):
         super().__post_init__()
         self.rewards.track_heading_target_exp.weight = 0.1
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadbandEnvCfg(HumanoidRlLabG1UprightHeadingLowEnvCfg):
+    """Low-weight heading task with a 0.05 rad reward deadband."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.rewards.track_heading_target_exp.func = (
+            track_heading_target_deadband_exp
+        )
+        params = dict(self.rewards.track_heading_target_exp.params)
+        params["deadband"] = 0.05
+        self.rewards.track_heading_target_exp.params = params
