@@ -23,3 +23,11 @@ class PPORunnerCfg(G1FlatPPORunnerCfg):
     def __post_init__(self) -> None:
         super().__post_init__()
         self.experiment_name = "humanoid_rl_lab_g1_flat"
+
+@configclass
+class PPORunnerDenseSave5Cfg(PPORunnerCfg):
+    """Identical PPO runner with checkpoint saving every 5 iterations."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.save_interval = 5

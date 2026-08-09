@@ -200,3 +200,11 @@ gym.register(
         ),
     },
 )
+
+gym.register(
+    id='Humanoid-RL-Lab-G1-Flat-Upright-Heading-Deadband-Yaw-Damp-Dense-v0',
+    entry_point='isaaclab.envs:ManagerBasedRLEnv',
+    disable_env_checker=True,
+    kwargs={'env_cfg_entry_point': 'humanoid_rl_lab.tasks.manager_based.humanoid_rl_lab.upright_env_cfg:HumanoidRlLabG1UprightHeadingDeadbandYawDampEnvCfg',
+         'rsl_rl_cfg_entry_point': 'humanoid_rl_lab.tasks.manager_based.humanoid_rl_lab.agents.rsl_rl_ppo_cfg:PPORunnerDenseSave5Cfg'},
+)
