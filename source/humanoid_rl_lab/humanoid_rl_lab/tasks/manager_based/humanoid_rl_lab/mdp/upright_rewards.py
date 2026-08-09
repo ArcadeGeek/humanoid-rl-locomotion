@@ -252,3 +252,72 @@ class yaw_rate_change_near_heading_target_l2(ManagerTermBase):
         self._initialized.fill_(True)
 
         return gated_penalty.clone()
+
+def yaw_rate_deadzone_near_heading_target_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    yaw_rate_threshold: float,
+    min_planar_speed: float,
+    near_target: float,
+    free_yaw_rate: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    # Penalize only actual yaw rate above a small free zone near target.
+    if yaw_rate_threshold < 0.0:
+        raise ValueError(
+            f"yaw_rate_threshold must be non-negative, got {yaw_rate_threshold}."
+        )
+    if min_planar_speed < 0.0:
+        raise ValueError(
+            f"min_planar_speed must be non-negative, got {min_planar_speed}."
+        )
+    if near_target < 0.0:
+        raise ValueError(
+            f"near_target must be non-negative, got {near_target}."
+        )
+    if free_yaw_rate < 0.0:
+        raise ValueError(
+            f"free_yaw_rate must be non-negative, got {free_yaw_rate}."
+        )
+
+    asset: Articulation = env.scene[asset_cfg.name]
+    actual_wz = _as_torch_tensor(
+        asset.data.root_ang_vel_w[:, 2]
+    )
+    heading_w = _as_torch_tensor(asset.data.heading_w)
+
+    command = _as_torch_tensor(
+        env.command_manager.get_command(command_name)
+    )
+    command_term = env.command_manager.get_term(command_name)
+    if not hasattr(command_term, "heading_target"):
+        raise AttributeError(
+            f"Command term {command_name!r} does not expose heading_target."
+        )
+    heading_target = _as_torch_tensor(
+        command_term.heading_target
+    )
+
+    heading_error = wrap_to_pi(heading_target - heading_w)
+    near_target_gate = torch.abs(heading_error) <= near_target
+    near_zero_yaw_rate = (
+        torch.abs(command[:, 2]) < yaw_rate_threshold
+    )
+    planar_speed = torch.linalg.vector_norm(
+        command[:, :2],
+        dim=1,
+    )
+    moving_command = planar_speed > min_planar_speed
+
+    excess_wz = torch.clamp(
+        torch.abs(actual_wz) - free_yaw_rate,
+        min=0.0,
+    )
+    raw_penalty = torch.square(excess_wz)
+
+    return (
+        raw_penalty
+        * near_target_gate.to(dtype=raw_penalty.dtype)
+        * near_zero_yaw_rate.to(dtype=raw_penalty.dtype)
+        * moving_command.to(dtype=raw_penalty.dtype)
+    )

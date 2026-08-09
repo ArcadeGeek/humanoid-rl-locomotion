@@ -19,6 +19,7 @@ from .mdp.upright_rewards import (
 from .mdp.upright_rewards import track_heading_target_deadband_exp
 from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_change_near_heading_target_l2
+from .mdp.upright_rewards import yaw_rate_deadzone_near_heading_target_l2
 
 
 @configclass
@@ -156,4 +157,27 @@ class HumanoidRlLabG1UprightHeadingDeadbandYawSmoothEnvCfg(HumanoidRlLabG1Uprigh
         }
         self.rewards.yaw_rate_change_near_heading_target_l2 = (
             smoothing_term
+        )
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadbandYawDeadzoneEnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Add actual-yaw dead-zone damping; keep heading reward unchanged.
+
+    def __post_init__(self):
+        super().__post_init__()
+        source_term = self.rewards.track_heading_target_exp
+        damping_term = copy.deepcopy(source_term)
+        damping_term.func = yaw_rate_deadzone_near_heading_target_l2
+        damping_term.weight = -0.05
+        source_params = dict(source_term.params)
+        damping_term.params = {
+            "command_name": source_params["command_name"],
+            "yaw_rate_threshold": source_params["yaw_rate_threshold"],
+            "min_planar_speed": source_params["min_planar_speed"],
+            "asset_cfg": source_params["asset_cfg"],
+            "near_target": 0.1,
+            "free_yaw_rate": 0.05,
+        }
+        self.rewards.yaw_rate_deadzone_near_heading_target_l2 = (
+            damping_term
         )
