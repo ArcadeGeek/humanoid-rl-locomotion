@@ -123,3 +123,14 @@ class HumanoidRlLabG1UprightHeadingDeadbandYawDampEnvCfg(HumanoidRlLabG1UprightH
         self.rewards.yaw_rate_near_heading_target_l2 = (
             damping_term
         )
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadbandYawDamp0025EnvCfg(HumanoidRlLabG1UprightHeadingDeadbandYawDampEnvCfg):
+    # Same task as the -0.05 yaw-damping variant,
+    # with only the damping weight reduced to -0.025.
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.rewards.yaw_rate_near_heading_target_l2.weight = (
+            -0.025
+        )
