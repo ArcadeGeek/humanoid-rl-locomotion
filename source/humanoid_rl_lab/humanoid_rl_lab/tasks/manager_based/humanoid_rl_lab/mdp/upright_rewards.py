@@ -13,6 +13,7 @@ import torch
 
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import wrap_to_pi
+from isaaclab.managers import ManagerTermBase
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -159,3 +160,95 @@ def yaw_rate_near_heading_target_l2(env: ManagerBasedRLEnv, command_name: str, s
     near_target_gate = torch.abs(heading_error) <= near_target
     base_wz = _as_torch_tensor(env.scene['robot'].data.root_ang_vel_w[:, 2])
     return torch.square(base_wz) * heading_gate.to(dtype=base_wz.dtype) * near_target_gate.to(dtype=base_wz.dtype)
+
+class yaw_rate_change_near_heading_target_l2(ManagerTermBase):
+    # Penalize step-to-step yaw-rate changes near the heading target.
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._previous_wz = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.float32,
+        )
+        self._initialized = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.bool,
+        )
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            self._initialized.zero_()
+            self._previous_wz.zero_()
+        else:
+            self._initialized[env_ids] = False
+            self._previous_wz[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        yaw_rate_threshold: float,
+        min_planar_speed: float,
+        near_target: float,
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    ) -> torch.Tensor:
+        if yaw_rate_threshold < 0.0:
+            raise ValueError(
+                f"yaw_rate_threshold must be non-negative, got {yaw_rate_threshold}."
+            )
+        if min_planar_speed < 0.0:
+            raise ValueError(
+                f"min_planar_speed must be non-negative, got {min_planar_speed}."
+            )
+        if near_target < 0.0:
+            raise ValueError(
+                f"near_target must be non-negative, got {near_target}."
+            )
+
+        asset: Articulation = env.scene[asset_cfg.name]
+        current_wz = _as_torch_tensor(
+            asset.data.root_ang_vel_w[:, 2]
+        )
+        heading_w = _as_torch_tensor(asset.data.heading_w)
+
+        command = _as_torch_tensor(
+            env.command_manager.get_command(command_name)
+        )
+        command_term = env.command_manager.get_term(command_name)
+        if not hasattr(command_term, "heading_target"):
+            raise AttributeError(
+                f"Command term {command_name!r} does not expose heading_target."
+            )
+        heading_target = _as_torch_tensor(
+            command_term.heading_target
+        )
+
+        heading_error = wrap_to_pi(heading_target - heading_w)
+        near_target_gate = torch.abs(heading_error) <= near_target
+        near_zero_yaw_rate = (
+            torch.abs(command[:, 2]) < yaw_rate_threshold
+        )
+        planar_speed = torch.linalg.vector_norm(
+            command[:, :2],
+            dim=1,
+        )
+        moving_command = planar_speed > min_planar_speed
+
+        delta_wz = current_wz - self._previous_wz
+        valid_history = self._initialized.clone()
+
+        raw_penalty = torch.square(delta_wz)
+        gated_penalty = (
+            raw_penalty
+            * valid_history.to(dtype=raw_penalty.dtype)
+            * near_target_gate.to(dtype=raw_penalty.dtype)
+            * near_zero_yaw_rate.to(dtype=raw_penalty.dtype)
+            * moving_command.to(dtype=raw_penalty.dtype)
+        )
+
+        self._previous_wz.copy_(current_wz)
+        self._initialized.fill_(True)
+
+        return gated_penalty.clone()
