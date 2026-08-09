@@ -5,6 +5,7 @@
 
 """Unitree G1 flat-terrain fine-tuning task for a less crouched gait."""
 
+import copy
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.configclass import configclass
@@ -16,6 +17,7 @@ from .mdp.upright_rewards import (
     track_heading_target_exp,
 )
 from .mdp.upright_rewards import track_heading_target_deadband_exp
+from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
 
 
 @configclass
@@ -104,3 +106,20 @@ class HumanoidRlLabG1UprightHeadingDeadband010EnvCfg(HumanoidRlLabG1UprightHeadi
         )
         params["deadband"] = 0.1
         self.rewards.track_heading_target_exp.params = params
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadbandYawDampEnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Add local yaw damping; keep heading reward unchanged.
+
+    def __post_init__(self):
+        super().__post_init__()
+        source_term = self.rewards.track_heading_target_exp
+        damping_term = copy.deepcopy(source_term)
+        damping_term.func = yaw_rate_near_heading_target_l2
+        damping_term.weight = -0.05
+        damping_params = dict(source_term.params)
+        damping_params["near_target"] = 0.1
+        damping_term.params = damping_params
+        self.rewards.yaw_rate_near_heading_target_l2 = (
+            damping_term
+        )

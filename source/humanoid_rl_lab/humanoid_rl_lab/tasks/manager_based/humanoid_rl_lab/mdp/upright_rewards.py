@@ -148,3 +148,14 @@ def track_heading_target_deadband_exp(env: ManagerBasedRLEnv, command_name: str,
     planar_speed = torch.linalg.vector_norm(command[:, :2], dim=1)
     moving_command = planar_speed > min_planar_speed
     return heading_reward * near_zero_yaw_rate.to(dtype=heading_reward.dtype) * moving_command.to(dtype=heading_reward.dtype)
+
+def yaw_rate_near_heading_target_l2(env: ManagerBasedRLEnv, command_name: str, std: float, yaw_rate_threshold: float, min_planar_speed: float, asset_cfg: SceneEntityCfg=SceneEntityCfg('robot'), deadband: float=0.05, near_target: float=0.1) -> torch.Tensor:
+    """Penalize yaw rate only near the heading target while reusing all validated heading reward gates."""
+    heading_gate = track_heading_target_deadband_exp(env, command_name=command_name, std=std, yaw_rate_threshold=yaw_rate_threshold, min_planar_speed=min_planar_speed, asset_cfg=asset_cfg, deadband=deadband) > 0.0
+    command_term = env.command_manager.get_term(command_name)
+    heading_target = _as_torch_tensor(command_term.heading_target)
+    heading_w = _as_torch_tensor(env.scene['robot'].data.heading_w)
+    heading_error = wrap_to_pi(heading_target - heading_w)
+    near_target_gate = torch.abs(heading_error) <= near_target
+    base_wz = _as_torch_tensor(env.scene['robot'].data.root_ang_vel_w[:, 2])
+    return torch.square(base_wz) * heading_gate.to(dtype=base_wz.dtype) * near_target_gate.to(dtype=base_wz.dtype)
