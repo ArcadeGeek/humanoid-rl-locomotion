@@ -212,3 +212,13 @@ class HumanoidRlLabG1UprightHeadingProgressEnvCfg(HumanoidRlLabG1UprightHeadingD
         progress_term.params["policy_dt"] = 0.02
         progress_term.params["target_change_tolerance"] = 0.0001
         self.rewards.track_heading_target_exp = progress_term
+
+@configclass
+class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Deadband-only heading objective at half the parent reward weight.
+
+    def __post_init__(self):
+        super().__post_init__()
+        heading_term = copy.deepcopy(self.rewards.track_heading_target_exp)
+        heading_term.weight = 0.05
+        self.rewards.track_heading_target_exp = heading_term
