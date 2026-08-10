@@ -426,3 +426,107 @@ class track_heading_target_filtered_deadband_exp(ManagerTermBase):
             * near_zero_yaw_rate.to(dtype=heading_reward.dtype)
             * moving_command.to(dtype=heading_reward.dtype)
         )
+
+class track_heading_target_progress_deadband(ManagerTermBase):
+    # Signed progress rate of persistent heading error outside a deadband.
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._previous_effective_error = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.float32
+        )
+        self._previous_heading_target = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.float32
+        )
+        self._initialized = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            self._previous_effective_error.zero_()
+            self._previous_heading_target.zero_()
+            self._initialized.zero_()
+        else:
+            self._previous_effective_error[env_ids] = 0.0
+            self._previous_heading_target[env_ids] = 0.0
+            self._initialized[env_ids] = False
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        std: float,
+        yaw_rate_threshold: float,
+        min_planar_speed: float,
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        deadband: float = 0.05,
+        policy_dt: float = 0.02,
+        target_change_tolerance: float = 1.0e-4,
+    ) -> torch.Tensor:
+        if std <= 0.0:
+            raise ValueError(f"std must be positive, got {std}.")
+        if yaw_rate_threshold < 0.0:
+            raise ValueError(
+                f"yaw_rate_threshold must be non-negative, got {yaw_rate_threshold}."
+            )
+        if min_planar_speed < 0.0:
+            raise ValueError(
+                f"min_planar_speed must be non-negative, got {min_planar_speed}."
+            )
+        if deadband < 0.0:
+            raise ValueError(f"deadband must be non-negative, got {deadband}.")
+        if policy_dt <= 0.0:
+            raise ValueError(f"policy_dt must be positive, got {policy_dt}.")
+        if target_change_tolerance < 0.0:
+            raise ValueError(
+                "target_change_tolerance must be non-negative, "
+                f"got {target_change_tolerance}."
+            )
+
+        asset: Articulation = env.scene[asset_cfg.name]
+        heading_w = _as_torch_tensor(asset.data.heading_w)
+        command = _as_torch_tensor(
+            env.command_manager.get_command(command_name)
+        )
+        command_term = env.command_manager.get_term(command_name)
+        if not hasattr(command_term, "heading_target"):
+            raise AttributeError(
+                f"Command term {command_name!r} does not expose heading_target."
+            )
+        heading_target = _as_torch_tensor(command_term.heading_target)
+
+        heading_error = wrap_to_pi(heading_target - heading_w)
+        effective_error = torch.clamp(
+            torch.abs(heading_error) - deadband,
+            min=0.0,
+        )
+
+        target_delta = wrap_to_pi(
+            heading_target - self._previous_heading_target
+        )
+        target_changed = (
+            torch.abs(target_delta) > target_change_tolerance
+        )
+        comparable = self._initialized & (~target_changed)
+
+        progress_rate = torch.where(
+            comparable,
+            (
+                self._previous_effective_error - effective_error
+            ) / (std * policy_dt),
+            torch.zeros_like(effective_error),
+        )
+
+        self._previous_effective_error.copy_(effective_error)
+        self._previous_heading_target.copy_(heading_target)
+        self._initialized.fill_(True)
+
+        near_zero_yaw_rate = (
+            torch.abs(command[:, 2]) < yaw_rate_threshold
+        )
+        planar_speed = torch.linalg.vector_norm(command[:, :2], dim=1)
+        moving_command = planar_speed > min_planar_speed
+
+        active = near_zero_yaw_rate & moving_command
+        return progress_rate * active.to(dtype=progress_rate.dtype)

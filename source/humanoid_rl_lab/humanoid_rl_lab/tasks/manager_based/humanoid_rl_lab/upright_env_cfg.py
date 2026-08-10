@@ -21,6 +21,7 @@ from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_change_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_deadzone_near_heading_target_l2
 from .mdp.upright_rewards import track_heading_target_filtered_deadband_exp
+from .mdp.upright_rewards import track_heading_target_progress_deadband
 
 
 @configclass
@@ -196,3 +197,18 @@ class HumanoidRlLabG1UprightHeadingFilteredEnvCfg(HumanoidRlLabG1UprightHeadingD
         filtered_term.params = dict(filtered_term.params)
         filtered_term.params["ema_alpha"] = 0.960789439152323
         self.rewards.track_heading_target_exp = filtered_term
+
+@configclass
+class HumanoidRlLabG1UprightHeadingProgressEnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Use signed heading-error progress; keep every other term unchanged.
+
+    def __post_init__(self):
+        super().__post_init__()
+        progress_term = copy.deepcopy(
+            self.rewards.track_heading_target_exp
+        )
+        progress_term.func = track_heading_target_progress_deadband
+        progress_term.params = dict(progress_term.params)
+        progress_term.params["policy_dt"] = 0.02
+        progress_term.params["target_change_tolerance"] = 0.0001
+        self.rewards.track_heading_target_exp = progress_term
