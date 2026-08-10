@@ -37,6 +37,10 @@ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, handle_de
 
 import isaaclab_tasks  # noqa: F401
 import humanoid_rl_lab.tasks  # noqa: F401
+from humanoid_rl_lab.controllers import (
+    VALIDATED_UPRIGHT680_HEADING_HOLD,
+    compute_heading_hold_wz,
+)
 from isaaclab_tasks.utils import add_launcher_args, launch_simulation, setup_preset_cli
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
@@ -62,6 +66,20 @@ parser.add_argument("--push_time_s", type=float, default=None, help="Measurement
 parser.add_argument("--push_vx_mps", type=float, default=0.0, help="World-X root linear-velocity delta.")
 parser.add_argument("--push_vy_mps", type=float, default=0.0, help="World-Y root linear-velocity delta.")
 parser.add_argument("--push_wz_radps", type=float, default=0.0, help="World-Z root angular-velocity delta.")
+parser.add_argument(
+    "--heading_hold",
+    action="store_true",
+    help=(
+        "Enable the validated external Upright680 heading-hold preset. "
+        "When disabled, evaluator command behavior is unchanged."
+    ),
+)
+parser.add_argument(
+    "--heading_hold_target_rad",
+    type=float,
+    default=0.0,
+    help="World-heading target in radians for --heading_hold.",
+)
 cli_args.add_rsl_rl_args(parser)
 add_launcher_args(parser)
 args_cli, remaining_args = setup_preset_cli(parser)
@@ -1247,6 +1265,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
 
             base_env = env.unwrapped
             robot = base_env.scene["robot"]
+
+            heading_hold_config = VALIDATED_UPRIGHT680_HEADING_HOLD
+            if args_cli.heading_hold:
+                print(
+                    "[HEADING-HOLD] enabled "
+                    f"Kp={heading_hold_config.kp_s_inv:.3f} s^-1 "
+                    f"deadband={math.degrees(heading_hold_config.deadband_rad):.3f} deg "
+                    f"max|wz|={heading_hold_config.max_abs_wz_radps:.3f} rad/s "
+                    f"target={args_cli.heading_hold_target_rad:.6f} rad"
+                )
             posture_joint_names = [
                 "left_hip_pitch_joint",
                 "right_hip_pitch_joint",
@@ -1394,6 +1422,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     }
                     push_applied_this_step = True
                     print(f"[PUSH] t={controlled_push['effective_time_s']:.3f}s delta_world=({push_delta[0]:+.3f}, {push_delta[1]:+.3f}, {push_delta[2]:+.3f})")
+
+                if args_cli.heading_hold:
+                    command_buffer = base_env.command_manager.get_command("base_velocity")
+                    heading_w = _torch(robot.data.heading_w)
+                    desired_wz_cmd = compute_heading_hold_wz(
+                        heading_w,
+                        config=heading_hold_config,
+                        target_heading_rad=args_cli.heading_hold_target_rad,
+                    )
+                    with torch.no_grad():
+                        command_buffer[:, 0] = heading_hold_config.body_vx_mps
+                        command_buffer[:, 1] = heading_hold_config.body_vy_mps
+                        command_buffer[:, 2] = desired_wz_cmd
+
+                    # Refresh observations so this policy step sees the new command.
+                    obs = env.get_observations()
 
                 with torch.inference_mode():
                     actions = policy(obs)
