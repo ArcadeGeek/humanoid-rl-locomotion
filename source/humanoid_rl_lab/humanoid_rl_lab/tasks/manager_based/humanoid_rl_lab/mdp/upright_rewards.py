@@ -321,3 +321,108 @@ def yaw_rate_deadzone_near_heading_target_l2(
         * near_zero_yaw_rate.to(dtype=raw_penalty.dtype)
         * moving_command.to(dtype=raw_penalty.dtype)
     )
+
+class track_heading_target_filtered_deadband_exp(ManagerTermBase):
+    # Track persistent commanded-heading error using a wrapped angular EMA.
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._filtered_heading_error = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.float32,
+        )
+        self._initialized = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.bool,
+        )
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            self._filtered_heading_error.zero_()
+            self._initialized.zero_()
+        else:
+            self._filtered_heading_error[env_ids] = 0.0
+            self._initialized[env_ids] = False
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        std: float,
+        yaw_rate_threshold: float,
+        min_planar_speed: float,
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        deadband: float = 0.05,
+        ema_alpha: float = 0.960789439152323,
+    ) -> torch.Tensor:
+        if std <= 0.0:
+            raise ValueError(f"std must be positive, got {std}.")
+        if yaw_rate_threshold < 0.0:
+            raise ValueError(
+                f"yaw_rate_threshold must be non-negative, got {yaw_rate_threshold}."
+            )
+        if min_planar_speed < 0.0:
+            raise ValueError(
+                f"min_planar_speed must be non-negative, got {min_planar_speed}."
+            )
+        if deadband < 0.0:
+            raise ValueError(f"deadband must be non-negative, got {deadband}.")
+        if not 0.0 <= ema_alpha < 1.0:
+            raise ValueError(
+                f"ema_alpha must satisfy 0 <= alpha < 1, got {ema_alpha}."
+            )
+
+        asset: Articulation = env.scene[asset_cfg.name]
+        heading_w = _as_torch_tensor(asset.data.heading_w)
+        command = _as_torch_tensor(
+            env.command_manager.get_command(command_name)
+        )
+        command_term = env.command_manager.get_term(command_name)
+        if not hasattr(command_term, "heading_target"):
+            raise AttributeError(
+                f"Command term {command_name!r} does not expose heading_target."
+            )
+        heading_target = _as_torch_tensor(command_term.heading_target)
+
+        heading_error = wrap_to_pi(heading_target - heading_w)
+
+        residual = wrap_to_pi(
+            heading_error - self._filtered_heading_error
+        )
+        updated_error = wrap_to_pi(
+            self._filtered_heading_error
+            + (1.0 - ema_alpha) * residual
+        )
+        filtered_error = torch.where(
+            self._initialized,
+            updated_error,
+            heading_error,
+        )
+
+        self._filtered_heading_error.copy_(filtered_error)
+        self._initialized.fill_(True)
+
+        effective_heading_error = torch.clamp(
+            torch.abs(filtered_error) - deadband,
+            min=0.0,
+        )
+        heading_reward = torch.exp(
+            -torch.square(effective_heading_error / std)
+        )
+
+        near_zero_yaw_rate = (
+            torch.abs(command[:, 2]) < yaw_rate_threshold
+        )
+        planar_speed = torch.linalg.vector_norm(
+            command[:, :2],
+            dim=1,
+        )
+        moving_command = planar_speed > min_planar_speed
+
+        return (
+            heading_reward
+            * near_zero_yaw_rate.to(dtype=heading_reward.dtype)
+            * moving_command.to(dtype=heading_reward.dtype)
+        )

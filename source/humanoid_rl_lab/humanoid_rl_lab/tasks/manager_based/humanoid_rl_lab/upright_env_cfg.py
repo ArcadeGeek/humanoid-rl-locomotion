@@ -20,6 +20,7 @@ from .mdp.upright_rewards import track_heading_target_deadband_exp
 from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_change_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_deadzone_near_heading_target_l2
+from .mdp.upright_rewards import track_heading_target_filtered_deadband_exp
 
 
 @configclass
@@ -181,3 +182,17 @@ class HumanoidRlLabG1UprightHeadingDeadbandYawDeadzoneEnvCfg(HumanoidRlLabG1Upri
         self.rewards.yaw_rate_deadzone_near_heading_target_l2 = (
             damping_term
         )
+
+@configclass
+class HumanoidRlLabG1UprightHeadingFilteredEnvCfg(HumanoidRlLabG1UprightHeadingDeadbandEnvCfg):
+    # Filter persistent heading error; keep every other term unchanged.
+
+    def __post_init__(self):
+        super().__post_init__()
+        filtered_term = copy.deepcopy(
+            self.rewards.track_heading_target_exp
+        )
+        filtered_term.func = track_heading_target_filtered_deadband_exp
+        filtered_term.params = dict(filtered_term.params)
+        filtered_term.params["ema_alpha"] = 0.960789439152323
+        self.rewards.track_heading_target_exp = filtered_term
