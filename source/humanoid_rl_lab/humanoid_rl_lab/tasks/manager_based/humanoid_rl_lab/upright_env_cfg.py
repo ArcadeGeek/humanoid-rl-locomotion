@@ -50,6 +50,24 @@ class HumanoidRlLabG1UprightEnvCfg(HumanoidRlLabEnvCfg):
 
 
 @configclass
+class HumanoidRlLabG1UprightYawDirectEnvCfg(HumanoidRlLabG1UprightEnvCfg):
+    """Upright v1 with direct low-amplitude yaw-rate command training.
+
+    This ablation changes only yaw-command generation: heading-target control
+    is disabled and yaw rate is sampled directly from [-0.15, +0.15] rad/s,
+    matching the complete output domain of the frozen external heading hold.
+    """
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        command = self.commands.base_velocity
+        command.heading_command = False
+        command.rel_heading_envs = 0.0
+        command.ranges.ang_vel_z = (-0.15, 0.15)
+
+
+@configclass
 class HumanoidRlLabG1UprightHeadingRewardsCfg(
     HumanoidRlLabG1UprightRewardsCfg
 ):
