@@ -1,0 +1,811 @@
+{
+  "freeze_id": "g1_heading_hold_multiseed_freeze_v1",
+  "freeze_date": "2026-08-12",
+  "repository": {
+    "branch": "feat/g1-locomotion-task",
+    "head_short": "ec415eb"
+  },
+  "controller": {
+    "name": "validated Upright680 external heading hold",
+    "implementation_commit": "ec415eb",
+    "body_vx_mps": 0.4,
+    "body_vy_mps": 0.0,
+    "kp_s_inv": 0.5,
+    "deadband_deg": 1.0,
+    "max_abs_wz_radps": 0.15,
+    "target_heading_rad": 0.0,
+    "policy_interface_note": "Only wz command is altered; body-frame vx=0.4 and vy=0 remain fixed."
+  },
+  "training_design": {
+    "reference_training_seed": 42,
+    "independent_finetuning_seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "shared_bootstrap": "Frozen Scratch600",
+    "predefined_checkpoint_iteration": 680,
+    "new_transitions_per_independent_finetuning_run": 9830400,
+    "new_transitions_across_5_replication_runs": 49152000,
+    "inference_unit": "trained policy",
+    "boundary": "Seeds 101/202/303/404/505 are independent fine-tuning seeds conditional on the same frozen Scratch600 bootstrap; perturbation seeds are repeated measurements within policy, not independent training replicates."
+  },
+  "evaluation_design": {
+    "development_reference_perturbation_seeds": [
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "holdout_reference_perturbation_seeds": [
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59
+    ],
+    "confirmatory_replication_perturbation_seeds": [
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69
+    ],
+    "paired_initial_states": true,
+    "schema": 7,
+    "guardrails": {
+      "heading_final_abs_improvement_min_pct": 70.0,
+      "wz_rmse_deterioration_max_pct": 5.0,
+      "vx_abs_error_deterioration_max_pct": 5.0,
+      "six_joint_work_deterioration_max_pct": 5.0,
+      "root_tilt_rms_deterioration_max_pct": 5.0,
+      "root_tilt_p95_deterioration_max_pct": 5.0,
+      "torso_relative_deterioration_max_pct": 5.0,
+      "torso_angular_deterioration_max_pct": 5.0,
+      "duty_factor_asymmetry_deterioration_max_pct": 10.0,
+      "stance_duration_asymmetry_deterioration_max_pct": 10.0,
+      "swing_duration_asymmetry_deterioration_max_pct": 10.0,
+      "normal_impulse_asymmetry_deterioration_max_pct": 10.0,
+      "normal_force_rms_asymmetry_deterioration_max_pct": 10.0
+    }
+  },
+  "checkpoints": {
+    "scratch600_frozen": {
+      "path": "checkpoints\\local_g1_scratch_v1\\model_600.pt",
+      "sha256": "4cfc43347952e80c2476b54a6e83aa9d63ff7de81a489850da4b5f8d57ff86f4",
+      "role": "Frozen Scratch v1 bootstrap/reference checkpoint"
+    },
+    "upright680_frozen": {
+      "path": "checkpoints\\local_g1_scratch_upright_v1\\model_680.pt",
+      "sha256": "928a404035ae1841957dd64418f0a6122b682329312c504f5c16f92ccdb1f479",
+      "role": "Frozen Upright v1 reference checkpoint"
+    },
+    "upright680_historical_source_copy": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_flat\\upright_heading_v2_seed42_init\\model_680.pt",
+      "sha256": "928a404035ae1841957dd64418f0a6122b682329312c504f5c16f92ccdb1f479",
+      "role": "Historical source copy matching frozen Upright680"
+    },
+    "indseed101_model680": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_upright\\2026-08-11_14-04-22_thesis_upright_indseed101_pilot100\\model_680.pt",
+      "sha256": "8fcf1c17caf0c399876feff96f0bb95f7497e98d06c9e5e71722b997f1bf1234",
+      "role": "Independent fine-tuning seed 101, predefined model_680"
+    },
+    "indseed202_model680": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_upright\\2026-08-11_15-24-41_thesis_upright_indseed202_pilot100\\model_680.pt",
+      "sha256": "dfe4b341c3b55c697a9a179823253cd308e6bce23f6e306e60d919c3c15f72eb",
+      "role": "Independent fine-tuning seed 202, predefined model_680"
+    },
+    "indseed303_model680": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_upright\\2026-08-11_23-06-38_thesis_upright_indseed303_pilot100\\model_680.pt",
+      "sha256": "c82b7f10ece4ad4a2b29f2a5672a8f8340b2424f084923e3072043d20d9ec9fb",
+      "role": "Independent fine-tuning seed 303, predefined model_680"
+    },
+    "indseed404_model680": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_upright\\2026-08-12_01-49-22_thesis_upright_indseed404_pilot100\\model_680.pt",
+      "sha256": "8628dd8c103639ff6ddfc46301458cbb128464e475d8d819cb9557279c47b1f7",
+      "role": "Independent fine-tuning seed 404, predefined model_680"
+    },
+    "indseed505_model680": {
+      "path": "logs\\rsl_rl\\humanoid_rl_lab_g1_upright\\2026-08-12_02-40-29_thesis_upright_indseed505_pilot100\\model_680.pt",
+      "sha256": "0be19bcdc6a3b16d29e39a7c7a2c3ed29a837abdff674459c08d2a74483af76e",
+      "role": "Independent fine-tuning seed 505, predefined model_680"
+    }
+  },
+  "campaign_paths": {
+    "reference_development_40_49": "logs\\evaluations\\g1\\analysis\\upright680_heading_hold_kp050_wz015_robust_40_49",
+    "reference_holdout_50_59": "logs\\evaluations\\g1\\analysis\\upright680_heading_hold_kp050_wz015_holdout_50_59",
+    "indseed101_robust_60_69": "logs\\evaluations\\g1\\analysis\\indseed101_model680_heading_hold_robust_60_69",
+    "indseed202_robust_60_69": "logs\\evaluations\\g1\\analysis\\indseed202_model680_heading_hold_robust_60_69",
+    "indseed303_robust_60_69": "logs\\evaluations\\g1\\analysis\\indseed303_model680_heading_hold_robust_60_69",
+    "indseed404_robust_60_69": "logs\\evaluations\\g1\\analysis\\indseed404_model680_heading_hold_robust_60_69",
+    "indseed505_robust_60_69": "logs\\evaluations\\g1\\analysis\\indseed505_model680_heading_hold_robust_60_69"
+  },
+  "nominal_evaluation_paths": {
+    "indseed101_nominal_off": "logs\\evaluations\\g1\\analysis\\indseed101_model680_nominal_off",
+    "indseed101_nominal_on": "logs\\evaluations\\g1\\analysis\\indseed101_model680_nominal_on",
+    "indseed202_nominal_off": "logs\\evaluations\\g1\\analysis\\indseed202_model680_nominal_off",
+    "indseed202_nominal_on": "logs\\evaluations\\g1\\analysis\\indseed202_model680_nominal_on",
+    "indseed303_nominal_off": "logs\\evaluations\\g1\\analysis\\indseed303_model680_nominal_off",
+    "indseed303_nominal_on": "logs\\evaluations\\g1\\analysis\\indseed303_model680_nominal_on",
+    "indseed404_nominal_off": "logs\\evaluations\\g1\\analysis\\indseed404_model680_nominal_off",
+    "indseed404_nominal_on": "logs\\evaluations\\g1\\analysis\\indseed404_model680_nominal_on",
+    "indseed505_nominal_off": "logs\\evaluations\\g1\\analysis\\indseed505_model680_nominal_off",
+    "indseed505_nominal_on": "logs\\evaluations\\g1\\analysis\\indseed505_model680_nominal_on"
+  },
+  "reference_results": {
+    "development_seed42_perturbations_40_49": {
+      "heading_final_abs_off_deg": 16.048771,
+      "heading_final_abs_on_deg": 2.539474,
+      "heading_final_abs_improvement_pct": 84.18,
+      "wz_rmse_change_pct": -0.9,
+      "vx_abs_error_change_pct": 0.03,
+      "role": "controller development / robustness characterization; not confirmatory replication"
+    },
+    "holdout_seed42_perturbations_50_59": {
+      "heading_final_abs_off_deg": 15.841397,
+      "heading_final_abs_on_deg": 2.473886,
+      "heading_final_abs_improvement_pct": 84.38,
+      "wz_rmse_change_pct": -1.45,
+      "vx_abs_error_change_pct": 0.01,
+      "practical_guardrails_pass": true,
+      "role": "predeclared holdout on development/reference trained policy"
+    }
+  },
+  "confirmatory_policy_results": {
+    "101": {
+      "training_seed": 101,
+      "checkpoint_sha256": "8fcf1c17caf0c399876feff96f0bb95f7497e98d06c9e5e71722b997f1bf1234",
+      "perturbation_seeds": [
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "metric_means": {
+        "heading_final_abs_deg": {
+          "off": 30.113811252,
+          "on": 3.89457109
+        },
+        "wz_rmse_radps": {
+          "off": 0.074470222,
+          "on": 0.073194812
+        },
+        "six_joint_work_j": {
+          "off": 1516.984767274,
+          "on": 1533.446996082
+        },
+        "root_tilt_rms_deg": {
+          "off": 2.573931436,
+          "on": 2.682566229
+        },
+        "root_tilt_p95_deg": {
+          "off": 3.020857372,
+          "on": 3.150697459
+        },
+        "torso_relative_delta_rms_deg": {
+          "off": 7.172008963,
+          "on": 7.003499372
+        },
+        "torso_angular_speed_rms_radps": {
+          "off": 1.493733045,
+          "on": 1.49358677
+        },
+        "duty_factor_asymmetry": {
+          "off": 0.10522435,
+          "on": 0.105026282
+        },
+        "stance_duration_asymmetry": {
+          "off": 0.117647059,
+          "on": 0.117647059
+        },
+        "swing_duration_asymmetry": {
+          "off": 0.133333333,
+          "on": 0.133333333
+        },
+        "normal_impulse_asymmetry": {
+          "off": 0.145389861,
+          "on": 0.161697421
+        },
+        "normal_force_rms_asymmetry": {
+          "off": 0.011473734,
+          "on": 0.036709385
+        },
+        "vx_abs_error_mps": {
+          "off": 0.076071728,
+          "on": 0.075909691
+        }
+      },
+      "change_pct": {
+        "heading_final_abs_deg": -87.06716,
+        "wz_rmse_radps": -1.712643,
+        "six_joint_work_j": 1.085194,
+        "root_tilt_rms_deg": 4.220578,
+        "root_tilt_p95_deg": 4.29812,
+        "torso_relative_delta_rms_deg": -2.349545,
+        "torso_angular_speed_rms_radps": -0.009793,
+        "duty_factor_asymmetry": -0.188234,
+        "stance_duration_asymmetry": 0.0,
+        "swing_duration_asymmetry": 0.0,
+        "normal_impulse_asymmetry": 11.216436,
+        "normal_force_rms_asymmetry": 219.94279,
+        "vx_abs_error_mps": -0.213005
+      },
+      "heading_final_abs_improvement_pct": 87.06716,
+      "heading_final_abs_on_deg": 3.89457109,
+      "wz_rmse_change_pct": -1.712643,
+      "vx_abs_error_change_pct": -0.213005,
+      "root_tilt_rms_change_pct": 4.220578,
+      "root_tilt_p95_change_pct": 4.29812,
+      "guardrail_checks": {
+        "heading_final_abs_improvement": true,
+        "wz_rmse": true,
+        "vx_abs_error": true,
+        "six_joint_work": true,
+        "root_tilt_rms": true,
+        "root_tilt_p95": true,
+        "torso_relative": true,
+        "torso_angular": true,
+        "duty_factor_asymmetry": true,
+        "stance_duration_asymmetry": true,
+        "swing_duration_asymmetry": true,
+        "normal_impulse_asymmetry": false,
+        "normal_force_rms_asymmetry": false
+      },
+      "overall_guardrail_pass": false,
+      "failed_guardrails": [
+        "normal_impulse_asymmetry",
+        "normal_force_rms_asymmetry"
+      ]
+    },
+    "202": {
+      "training_seed": 202,
+      "checkpoint_sha256": "dfe4b341c3b55c697a9a179823253cd308e6bce23f6e306e60d919c3c15f72eb",
+      "perturbation_seeds": [
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "metric_means": {
+        "heading_final_abs_deg": {
+          "off": 42.088811728,
+          "on": 4.115748837
+        },
+        "wz_rmse_radps": {
+          "off": 0.092807948,
+          "on": 0.092242894
+        },
+        "six_joint_work_j": {
+          "off": 1513.612899203,
+          "on": 1503.613284911
+        },
+        "root_tilt_rms_deg": {
+          "off": 1.81437949,
+          "on": 1.99204178
+        },
+        "root_tilt_p95_deg": {
+          "off": 2.24401225,
+          "on": 2.46541429
+        },
+        "torso_relative_delta_rms_deg": {
+          "off": 7.022930376,
+          "on": 6.938503857
+        },
+        "torso_angular_speed_rms_radps": {
+          "off": 1.539259267,
+          "on": 1.54447502
+        },
+        "duty_factor_asymmetry": {
+          "off": 0.148447404,
+          "on": 0.169626032
+        },
+        "stance_duration_asymmetry": {
+          "off": 0.146714002,
+          "on": 0.168281564
+        },
+        "swing_duration_asymmetry": {
+          "off": 0.16034332,
+          "on": 0.188512221
+        },
+        "normal_impulse_asymmetry": {
+          "off": 0.196470629,
+          "on": 0.192348137
+        },
+        "normal_force_rms_asymmetry": {
+          "off": 0.103744363,
+          "on": 0.101003104
+        },
+        "vx_abs_error_mps": {
+          "off": 0.074695891,
+          "on": 0.075373692
+        }
+      },
+      "change_pct": {
+        "heading_final_abs_deg": -90.221276,
+        "wz_rmse_radps": -0.608842,
+        "six_joint_work_j": -0.660645,
+        "root_tilt_rms_deg": 9.791904,
+        "root_tilt_p95_deg": 9.866347,
+        "torso_relative_delta_rms_deg": -1.202155,
+        "torso_angular_speed_rms_radps": 0.338848,
+        "duty_factor_asymmetry": 14.266755,
+        "stance_duration_asymmetry": 14.700412,
+        "swing_duration_asymmetry": 17.567867,
+        "normal_impulse_asymmetry": -2.098274,
+        "normal_force_rms_asymmetry": -2.642321,
+        "vx_abs_error_mps": 0.907414
+      },
+      "heading_final_abs_improvement_pct": 90.221276,
+      "heading_final_abs_on_deg": 4.115748837,
+      "wz_rmse_change_pct": -0.608842,
+      "vx_abs_error_change_pct": 0.907414,
+      "root_tilt_rms_change_pct": 9.791904,
+      "root_tilt_p95_change_pct": 9.866347,
+      "guardrail_checks": {
+        "heading_final_abs_improvement": true,
+        "wz_rmse": true,
+        "vx_abs_error": true,
+        "six_joint_work": true,
+        "root_tilt_rms": false,
+        "root_tilt_p95": false,
+        "torso_relative": true,
+        "torso_angular": true,
+        "duty_factor_asymmetry": false,
+        "stance_duration_asymmetry": false,
+        "swing_duration_asymmetry": false,
+        "normal_impulse_asymmetry": true,
+        "normal_force_rms_asymmetry": true
+      },
+      "overall_guardrail_pass": false,
+      "failed_guardrails": [
+        "root_tilt_rms",
+        "root_tilt_p95",
+        "duty_factor_asymmetry",
+        "stance_duration_asymmetry",
+        "swing_duration_asymmetry"
+      ]
+    },
+    "303": {
+      "training_seed": 303,
+      "checkpoint_sha256": "c82b7f10ece4ad4a2b29f2a5672a8f8340b2424f084923e3072043d20d9ec9fb",
+      "perturbation_seeds": [
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "metric_means": {
+        "heading_final_abs_deg": {
+          "off": 44.140445509,
+          "on": 4.623801872
+        },
+        "wz_rmse_radps": {
+          "off": 0.088081416,
+          "on": 0.086809615
+        },
+        "six_joint_work_j": {
+          "off": 1542.30788079,
+          "on": 1545.05065396
+        },
+        "root_tilt_rms_deg": {
+          "off": 2.083957931,
+          "on": 2.336014545
+        },
+        "root_tilt_p95_deg": {
+          "off": 2.614521047,
+          "on": 2.906860737
+        },
+        "torso_relative_delta_rms_deg": {
+          "off": 7.842742067,
+          "on": 7.85679613
+        },
+        "torso_angular_speed_rms_radps": {
+          "off": 1.680742573,
+          "on": 1.688117723
+        },
+        "duty_factor_asymmetry": {
+          "off": 0.127169215,
+          "on": 0.137613241
+        },
+        "stance_duration_asymmetry": {
+          "off": 0.129098056,
+          "on": 0.136124854
+        },
+        "swing_duration_asymmetry": {
+          "off": 0.137005226,
+          "on": 0.145739234
+        },
+        "normal_impulse_asymmetry": {
+          "off": 0.171842801,
+          "on": 0.168619002
+        },
+        "normal_force_rms_asymmetry": {
+          "off": 0.090012396,
+          "on": 0.079274919
+        },
+        "vx_abs_error_mps": {
+          "off": 0.062343669,
+          "on": 0.061812761
+        }
+      },
+      "change_pct": {
+        "heading_final_abs_deg": -89.524796,
+        "wz_rmse_radps": -1.443892,
+        "six_joint_work_j": 0.177836,
+        "root_tilt_rms_deg": 12.095091,
+        "root_tilt_p95_deg": 11.181386,
+        "torso_relative_delta_rms_deg": 0.179198,
+        "torso_angular_speed_rms_radps": 0.438803,
+        "duty_factor_asymmetry": 8.2127,
+        "stance_duration_asymmetry": 5.442993,
+        "swing_duration_asymmetry": 6.374945,
+        "normal_impulse_asymmetry": -1.876016,
+        "normal_force_rms_asymmetry": -11.928886,
+        "vx_abs_error_mps": -0.851583
+      },
+      "heading_final_abs_improvement_pct": 89.524796,
+      "heading_final_abs_on_deg": 4.623801872,
+      "wz_rmse_change_pct": -1.443892,
+      "vx_abs_error_change_pct": -0.851583,
+      "root_tilt_rms_change_pct": 12.095091,
+      "root_tilt_p95_change_pct": 11.181386,
+      "guardrail_checks": {
+        "heading_final_abs_improvement": true,
+        "wz_rmse": true,
+        "vx_abs_error": true,
+        "six_joint_work": true,
+        "root_tilt_rms": false,
+        "root_tilt_p95": false,
+        "torso_relative": true,
+        "torso_angular": true,
+        "duty_factor_asymmetry": true,
+        "stance_duration_asymmetry": true,
+        "swing_duration_asymmetry": true,
+        "normal_impulse_asymmetry": true,
+        "normal_force_rms_asymmetry": true
+      },
+      "overall_guardrail_pass": false,
+      "failed_guardrails": [
+        "root_tilt_rms",
+        "root_tilt_p95"
+      ]
+    },
+    "404": {
+      "training_seed": 404,
+      "checkpoint_sha256": "8628dd8c103639ff6ddfc46301458cbb128464e475d8d819cb9557279c47b1f7",
+      "perturbation_seeds": [
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "metric_means": {
+        "heading_final_abs_deg": {
+          "off": 2.909729827,
+          "on": 1.066699137
+        },
+        "wz_rmse_radps": {
+          "off": 0.081416288,
+          "on": 0.081345227
+        },
+        "six_joint_work_j": {
+          "off": 1526.413777484,
+          "on": 1525.848482643
+        },
+        "root_tilt_rms_deg": {
+          "off": 1.933833109,
+          "on": 1.920577316
+        },
+        "root_tilt_p95_deg": {
+          "off": 2.618654083,
+          "on": 2.604988296
+        },
+        "torso_relative_delta_rms_deg": {
+          "off": 5.225904596,
+          "on": 5.467653938
+        },
+        "torso_angular_speed_rms_radps": {
+          "off": 1.542542867,
+          "on": 1.539897625
+        },
+        "duty_factor_asymmetry": {
+          "off": 0.180424619,
+          "on": 0.182120173
+        },
+        "stance_duration_asymmetry": {
+          "off": 0.182437569,
+          "on": 0.182691206
+        },
+        "swing_duration_asymmetry": {
+          "off": 0.206708478,
+          "on": 0.206472252
+        },
+        "normal_impulse_asymmetry": {
+          "off": 0.193436814,
+          "on": 0.195466298
+        },
+        "normal_force_rms_asymmetry": {
+          "off": 0.091449199,
+          "on": 0.091416991
+        },
+        "vx_abs_error_mps": {
+          "off": 0.054412631,
+          "on": 0.054480899
+        }
+      },
+      "change_pct": {
+        "heading_final_abs_deg": -63.340269,
+        "wz_rmse_radps": -0.087281,
+        "six_joint_work_j": -0.037034,
+        "root_tilt_rms_deg": -0.685467,
+        "root_tilt_p95_deg": -0.521863,
+        "torso_relative_delta_rms_deg": 4.625981,
+        "torso_angular_speed_rms_radps": -0.171486,
+        "duty_factor_asymmetry": 0.939757,
+        "stance_duration_asymmetry": 0.139026,
+        "swing_duration_asymmetry": -0.11428,
+        "normal_impulse_asymmetry": 1.049171,
+        "normal_force_rms_asymmetry": -0.03522,
+        "vx_abs_error_mps": 0.125464
+      },
+      "heading_final_abs_improvement_pct": 63.340269,
+      "heading_final_abs_on_deg": 1.066699137,
+      "wz_rmse_change_pct": -0.087281,
+      "vx_abs_error_change_pct": 0.125464,
+      "root_tilt_rms_change_pct": -0.685467,
+      "root_tilt_p95_change_pct": -0.521863,
+      "guardrail_checks": {
+        "heading_final_abs_improvement": false,
+        "wz_rmse": true,
+        "vx_abs_error": true,
+        "six_joint_work": true,
+        "root_tilt_rms": true,
+        "root_tilt_p95": true,
+        "torso_relative": true,
+        "torso_angular": true,
+        "duty_factor_asymmetry": true,
+        "stance_duration_asymmetry": true,
+        "swing_duration_asymmetry": true,
+        "normal_impulse_asymmetry": true,
+        "normal_force_rms_asymmetry": true
+      },
+      "overall_guardrail_pass": false,
+      "failed_guardrails": [
+        "heading_final_abs_improvement"
+      ],
+      "posthoc_note": "Relative-threshold floor effect: OFF final |heading| was already about 2.910 deg. This post-hoc interpretation does not alter the predeclared FAIL."
+    },
+    "505": {
+      "training_seed": 505,
+      "checkpoint_sha256": "0be19bcdc6a3b16d29e39a7c7a2c3ed29a837abdff674459c08d2a74483af76e",
+      "perturbation_seeds": [
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "metric_means": {
+        "heading_final_abs_deg": {
+          "off": 27.836226617,
+          "on": 3.880840531
+        },
+        "wz_rmse_radps": {
+          "off": 0.096578366,
+          "on": 0.100561383
+        },
+        "six_joint_work_j": {
+          "off": 1615.575769587,
+          "on": 1612.849639272
+        },
+        "root_tilt_rms_deg": {
+          "off": 1.92171257,
+          "on": 2.156943039
+        },
+        "root_tilt_p95_deg": {
+          "off": 2.660542172,
+          "on": 2.923836768
+        },
+        "torso_relative_delta_rms_deg": {
+          "off": 5.813436274,
+          "on": 5.68683835
+        },
+        "torso_angular_speed_rms_radps": {
+          "off": 1.547800556,
+          "on": 1.544594998
+        },
+        "duty_factor_asymmetry": {
+          "off": 0.231002251,
+          "on": 0.170383933
+        },
+        "stance_duration_asymmetry": {
+          "off": 0.242328305,
+          "on": 0.180133192
+        },
+        "swing_duration_asymmetry": {
+          "off": 0.24379358,
+          "on": 0.192399783
+        },
+        "normal_impulse_asymmetry": {
+          "off": 0.138661202,
+          "on": 0.147888693
+        },
+        "normal_force_rms_asymmetry": {
+          "off": 0.004639226,
+          "on": 0.015697193
+        },
+        "vx_abs_error_mps": {
+          "off": 0.057996553,
+          "on": 0.057875979
+        }
+      },
+      "change_pct": {
+        "heading_final_abs_deg": -86.05831,
+        "wz_rmse_radps": 4.12413,
+        "six_joint_work_j": -0.16874,
+        "root_tilt_rms_deg": 12.240669,
+        "root_tilt_p95_deg": 9.896276,
+        "torso_relative_delta_rms_deg": -2.177678,
+        "torso_angular_speed_rms_radps": -0.207104,
+        "duty_factor_asymmetry": -26.24144,
+        "stance_duration_asymmetry": -25.665641,
+        "swing_duration_asymmetry": -21.080866,
+        "normal_impulse_asymmetry": 6.654703,
+        "normal_force_rms_asymmetry": 238.357977,
+        "vx_abs_error_mps": -0.207899
+      },
+      "heading_final_abs_improvement_pct": 86.05831,
+      "heading_final_abs_on_deg": 3.880840531,
+      "wz_rmse_change_pct": 4.12413,
+      "vx_abs_error_change_pct": -0.207899,
+      "root_tilt_rms_change_pct": 12.240669,
+      "root_tilt_p95_change_pct": 9.896276,
+      "guardrail_checks": {
+        "heading_final_abs_improvement": true,
+        "wz_rmse": true,
+        "vx_abs_error": true,
+        "six_joint_work": true,
+        "root_tilt_rms": false,
+        "root_tilt_p95": false,
+        "torso_relative": true,
+        "torso_angular": true,
+        "duty_factor_asymmetry": true,
+        "stance_duration_asymmetry": true,
+        "swing_duration_asymmetry": true,
+        "normal_impulse_asymmetry": true,
+        "normal_force_rms_asymmetry": false
+      },
+      "overall_guardrail_pass": false,
+      "failed_guardrails": [
+        "root_tilt_rms",
+        "root_tilt_p95",
+        "normal_force_rms_asymmetry"
+      ]
+    }
+  },
+  "confirmatory_aggregate": {
+    "n_trained_policies": 5,
+    "full_guardrail_pass_count": 0,
+    "heading_improved_count": 5,
+    "heading_improvement_ge_70_count": 4,
+    "root_tilt_rms_worsened_count": 4,
+    "root_tilt_rms_exceeded_5_count": 3,
+    "root_tilt_p95_worsened_count": 4,
+    "root_tilt_p95_exceeded_5_count": 3,
+    "heading_final_abs_improvement_pct": {
+      "mean": 83.242362,
+      "median": 87.06716,
+      "min": 63.340269,
+      "max": 90.221276
+    },
+    "heading_final_abs_on_deg": {
+      "mean": 3.516332293,
+      "median": 3.89457109,
+      "min": 1.066699137,
+      "max": 4.623801872
+    },
+    "wz_rmse_change_pct": {
+      "mean": 0.054294,
+      "median": -0.608842,
+      "min": -1.712643,
+      "max": 4.12413
+    },
+    "vx_abs_error_change_pct": {
+      "mean": -0.047922,
+      "median": -0.207899,
+      "min": -0.851583,
+      "max": 0.907414
+    },
+    "root_tilt_rms_change_pct": {
+      "mean": 7.532555,
+      "median": 9.791904,
+      "min": -0.685467,
+      "max": 12.240669
+    },
+    "root_tilt_p95_change_pct": {
+      "mean": 6.944053,
+      "median": 9.866347,
+      "min": -0.521863,
+      "max": 11.181386
+    }
+  },
+  "frozen_interpretation": {
+    "primary_result": "The frozen external heading-hold controller improved final absolute heading for all 5 independent fine-tuning policies, with strong across-policy effect.",
+    "strict_acceptance_result": "0/5 independent fine-tuning policies passed all unchanged practical guardrails.",
+    "main_recurring_tradeoff": "Root tilt worsened in 4/5 policies and exceeded the +5% practical threshold in 3/5.",
+    "policy_dependence": "Other gait/contact violations were policy-dependent rather than universal.",
+    "seed404_note": "Seed404 failed only the relative >=70% heading-improvement guardrail; its absolute ON final |heading| was 1.067 deg. This floor-effect interpretation is post-hoc and does not alter the predeclared FAIL.",
+    "no_retuning_after_replication": true
+  },
+  "confirmatory_derivation": {
+    "source": "raw schema-7 summary.json files",
+    "training_seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "perturbation_seeds": [
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69
+    ],
+    "aggregation": "OFF and ON means computed within trained policy across paired perturbation seeds; across-policy summaries use trained policy as unit",
+    "double_rounding_avoided": true
+  }
+}
