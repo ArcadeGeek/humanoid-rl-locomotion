@@ -240,3 +240,14 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
         heading_term = copy.deepcopy(self.rewards.track_heading_target_exp)
         heading_term.weight = 0.05
         self.rewards.track_heading_target_exp = heading_term
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectTorsoRegEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2 with stronger official torso-joint deviation regularization."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific ablation versus Yaw-Direct v1:
+        # official G1 torso-joint L1 deviation penalty, conservative 2x weight.
+        self.rewards.joint_deviation_torso.weight = -0.2
