@@ -15,6 +15,7 @@ from .humanoid_rl_lab_env_cfg import HumanoidRlLabEnvCfg
 from .mdp.upright_rewards import (
     knee_flexion_above_threshold_l2,
     track_heading_target_exp,
+    track_ang_vel_z_pseudo_huber,
 )
 from .mdp.upright_rewards import track_heading_target_deadband_exp
 from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
@@ -241,6 +242,27 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
         heading_term.weight = 0.05
         self.rewards.track_heading_target_exp = heading_term
 
+
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectPseudoHuberYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2-D with an added dense pseudo-Huber yaw-error penalty."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific modification versus genuine-scratch v2-A:
+        # keep the original coarse Gaussian yaw reward unchanged and add a
+        # dense pseudo-Huber tracking penalty with command-domain scale.
+        source_term = self.rewards.track_ang_vel_z_exp
+        pseudo_huber_term = copy.deepcopy(source_term)
+        pseudo_huber_term.func = track_ang_vel_z_pseudo_huber
+        pseudo_huber_term.weight = -0.10
+        pseudo_huber_term.params = {
+            "command_name": source_term.params["command_name"],
+            "delta": 0.15,
+        }
+        self.rewards.track_ang_vel_z_pseudo_huber = pseudo_huber_term
 
 @configclass
 class HumanoidRlLabG1UprightYawDirectTwoScaleYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):

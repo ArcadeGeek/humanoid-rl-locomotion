@@ -48,6 +48,32 @@ def _as_torch_tensor(value):
     return value.torch if hasattr(value, "torch") else value
 
 
+def track_ang_vel_z_pseudo_huber(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    delta: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Dense pseudo-Huber penalty for commanded world-frame yaw-rate error.
+
+    The returned quantity is non-negative and dimensionless:
+    ``sqrt(1 + (error / delta)^2) - 1``.
+    Use a negative reward weight to penalize yaw-rate tracking error.
+    """
+
+    if delta <= 0.0:
+        raise ValueError(f"delta must be positive, got {delta}.")
+
+    asset: Articulation = env.scene[asset_cfg.name]
+    actual_wz = _as_torch_tensor(asset.data.root_ang_vel_w[:, 2])
+    command = _as_torch_tensor(
+        env.command_manager.get_command(command_name)
+    )
+
+    normalized_error = (command[:, 2] - actual_wz) / delta
+    return torch.sqrt(1.0 + torch.square(normalized_error)) - 1.0
+
+
 def track_heading_target_exp(
     env: ManagerBasedRLEnv,
     command_name: str,
