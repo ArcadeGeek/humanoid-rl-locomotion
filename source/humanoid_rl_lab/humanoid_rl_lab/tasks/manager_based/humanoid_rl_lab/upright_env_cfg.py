@@ -242,6 +242,18 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
         self.rewards.track_heading_target_exp = heading_term
 
 @configclass
+class HumanoidRlLabG1UprightYawDirectTightYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2-B with yaw-tracking kernel matched to the +/-0.15 rad/s command domain."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific ablation versus genuine-scratch v2-A:
+        # match yaw-tracking kernel width to the complete direct-yaw command range.
+        self.rewards.track_ang_vel_z_exp.params["std"] = 0.15
+
+
+@configclass
 class HumanoidRlLabG1UprightYawDirectTorsoRegEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
     """Yaw-Direct v2 with stronger official torso-joint deviation regularization."""
 
