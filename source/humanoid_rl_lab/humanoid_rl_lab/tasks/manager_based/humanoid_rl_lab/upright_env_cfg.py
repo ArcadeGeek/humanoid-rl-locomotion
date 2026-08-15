@@ -241,6 +241,27 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
         heading_term.weight = 0.05
         self.rewards.track_heading_target_exp = heading_term
 
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectTwoScaleYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2-C with complementary coarse and precision yaw-tracking kernels."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific modification versus genuine-scratch v2-A:
+        # preserve broad capture range while adding equal-weight precision shaping.
+        coarse_term = self.rewards.track_ang_vel_z_exp
+        coarse_term.weight = 0.5
+        coarse_term.params = dict(coarse_term.params)
+        coarse_term.params["std"] = 0.50
+
+        tight_term = copy.deepcopy(coarse_term)
+        tight_term.weight = 0.5
+        tight_term.params = dict(tight_term.params)
+        tight_term.params["std"] = 0.15
+        self.rewards.track_ang_vel_z_exp_tight = tight_term
+
 @configclass
 class HumanoidRlLabG1UprightYawDirectTightYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
     """Yaw-Direct v2-B with yaw-tracking kernel matched to the +/-0.15 rad/s command domain."""

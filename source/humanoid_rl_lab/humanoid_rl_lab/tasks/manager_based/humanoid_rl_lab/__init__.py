@@ -268,6 +268,22 @@ gym.register(
 )
 
 gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-Upright-Yaw-Direct-Two-Scale-Yaw-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.upright_env_cfg:"
+            "HumanoidRlLabG1UprightYawDirectTwoScaleYawEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.upright_yaw_direct_two_scale_yaw_ppo_cfg:"
+            "UprightYawDirectTwoScaleYawPPORunnerCfg"
+        ),
+    },
+)
+
+gym.register(
     id="Humanoid-RL-Lab-G1-Flat-Upright-Yaw-Direct-Tight-Yaw-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
