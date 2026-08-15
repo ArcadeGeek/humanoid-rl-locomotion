@@ -66,6 +66,9 @@ parser.add_argument("--push_time_s", type=float, default=None, help="Measurement
 parser.add_argument("--push_vx_mps", type=float, default=0.0, help="World-X root linear-velocity delta.")
 parser.add_argument("--push_vy_mps", type=float, default=0.0, help="World-Y root linear-velocity delta.")
 parser.add_argument("--push_wz_radps", type=float, default=0.0, help="World-Z root angular-velocity delta.")
+parser.add_argument("--command_vx_mps", type=float, default=None, help="Fixed body-X command for policy-response diagnostics.")
+parser.add_argument("--command_vy_mps", type=float, default=None, help="Fixed body-Y command for policy-response diagnostics.")
+parser.add_argument("--command_wz_radps", type=float, default=None, help="Fixed body-Z yaw-rate command for policy-response diagnostics.")
 parser.add_argument(
     "--heading_hold",
     action="store_true",
@@ -84,6 +87,30 @@ cli_args.add_rsl_rl_args(parser)
 add_launcher_args(parser)
 args_cli, remaining_args = setup_preset_cli(parser)
 sys.argv = [sys.argv[0]] + remaining_args
+
+_fixed_command_values = (
+    args_cli.command_vx_mps,
+    args_cli.command_vy_mps,
+    args_cli.command_wz_radps,
+)
+_fixed_command_count = sum(value is not None for value in _fixed_command_values)
+
+if _fixed_command_count not in (0, 3):
+    parser.error(
+        "Fixed-command diagnostics require all three arguments: "
+        "--command_vx_mps, --command_vy_mps, --command_wz_radps."
+    )
+
+if _fixed_command_count == 3 and args_cli.heading_hold:
+    parser.error(
+        "--heading_hold cannot be combined with fixed-command diagnostics."
+    )
+
+fixed_command_override = (
+    tuple(float(value) for value in _fixed_command_values)
+    if _fixed_command_count == 3
+    else None
+)
 
 installed_version = metadata.version("rsl-rl-lib")
 
@@ -1423,7 +1450,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     push_applied_this_step = True
                     print(f"[PUSH] t={controlled_push['effective_time_s']:.3f}s delta_world=({push_delta[0]:+.3f}, {push_delta[1]:+.3f}, {push_delta[2]:+.3f})")
 
-                if args_cli.heading_hold:
+                if fixed_command_override is not None:
+                    command_buffer = base_env.command_manager.get_command("base_velocity")
+                    with torch.no_grad():
+                        command_buffer[:, 0] = fixed_command_override[0]
+                        command_buffer[:, 1] = fixed_command_override[1]
+                        command_buffer[:, 2] = fixed_command_override[2]
+
+                    # Refresh observations so this policy step sees the fixed command.
+                    obs = env.get_observations()
+
+                elif args_cli.heading_hold:
                     command_buffer = base_env.command_manager.get_command("base_velocity")
                     heading_w = _torch(robot.data.heading_w)
                     desired_wz_cmd = compute_heading_hold_wz(
@@ -1456,7 +1493,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg) -> None:
                     continue
 
                 measurement_index = step - warmup_steps
-                command = _cpu_values(base_env.command_manager.get_command("base_velocity")[0])
+                command = (
+                    np.asarray(fixed_command_override, dtype=np.float64)
+                    if fixed_command_override is not None
+                    else _cpu_values(base_env.command_manager.get_command("base_velocity")[0])
+                )
                 root_pos = _cpu_values(_torch(robot.data.root_pos_w)[0])
                 root_lin_vel_b = _cpu_values(_torch(robot.data.root_lin_vel_b)[0])
                 root_ang_vel_b = _cpu_values(_torch(robot.data.root_ang_vel_b)[0])
