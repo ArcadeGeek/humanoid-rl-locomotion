@@ -16,6 +16,7 @@ from .mdp.upright_rewards import (
     knee_flexion_above_threshold_l2,
     track_heading_target_exp,
     track_ang_vel_z_pseudo_huber,
+    track_ang_vel_z_inverse_sqrt,
 )
 from .mdp.upright_rewards import track_heading_target_deadband_exp
 from .mdp.upright_rewards import yaw_rate_near_heading_target_l2
@@ -243,6 +244,28 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
         self.rewards.track_heading_target_exp = heading_term
 
 
+
+
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectHeavyTailYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2-E with an added bounded heavy-tail yaw reward."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific modification versus genuine-scratch v2-A:
+        # keep the original Gaussian yaw reward unchanged and add a small,
+        # positive, bounded heavy-tail yaw-tracking bonus.
+        source_term = self.rewards.track_ang_vel_z_exp
+        heavy_tail_term = copy.deepcopy(source_term)
+        heavy_tail_term.func = track_ang_vel_z_inverse_sqrt
+        heavy_tail_term.weight = 0.10
+        heavy_tail_term.params = {
+            "command_name": source_term.params["command_name"],
+            "delta": 0.15,
+        }
+        self.rewards.track_ang_vel_z_heavy_tail = heavy_tail_term
 
 @configclass
 class HumanoidRlLabG1UprightYawDirectPseudoHuberYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
