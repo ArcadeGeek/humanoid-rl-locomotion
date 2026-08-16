@@ -247,6 +247,18 @@ class HumanoidRlLabG1UprightHeadingDeadbandW005EnvCfg(HumanoidRlLabG1UprightHead
 
 
 
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
+    """Yaw-Direct v2-F with a wider yaw-command training distribution."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific modification versus genuine-scratch v2-A:
+        # widen only the sampled direct yaw-rate command range.
+        self.commands.base_velocity.ranges.ang_vel_z = (-0.50, 0.50)
+
 @configclass
 class HumanoidRlLabG1UprightYawDirectHeavyTailYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
     """Yaw-Direct v2-E with an added bounded heavy-tail yaw reward."""
