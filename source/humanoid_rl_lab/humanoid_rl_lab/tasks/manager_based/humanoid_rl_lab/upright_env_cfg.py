@@ -259,6 +259,20 @@ class HumanoidRlLabG1UprightYawDirectWideYawEnvCfg(HumanoidRlLabG1UprightYawDire
         # widen only the sampled direct yaw-rate command range.
         self.commands.base_velocity.ranges.ang_vel_z = (-0.50, 0.50)
 
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationEnvCfg(
+    HumanoidRlLabG1UprightYawDirectWideYawEnvCfg
+):
+    """Yaw-Direct v2-G: v2-F wide-yaw training with stronger flat-orientation regularization."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Single scientific modification versus v2-F:
+        # strengthen only root flat-orientation regularization.
+        self.rewards.flat_orientation_l2.weight = -2.0
+
 @configclass
 class HumanoidRlLabG1UprightYawDirectHeavyTailYawEnvCfg(HumanoidRlLabG1UprightYawDirectEnvCfg):
     """Yaw-Direct v2-E with an added bounded heavy-tail yaw reward."""
