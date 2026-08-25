@@ -14,6 +14,7 @@ from isaaclab_tasks.manager_based.locomotion.velocity.config.g1.rough_env_cfg im
 from .humanoid_rl_lab_env_cfg import HumanoidRlLabEnvCfg
 from .mdp.upright_rewards import (
     knee_flexion_above_threshold_l2,
+    stand_still_joint_deviation_full_command_l1,
     track_heading_target_exp,
     track_ang_vel_z_pseudo_huber,
     track_ang_vel_z_inverse_sqrt,
@@ -376,3 +377,47 @@ class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3AEnvCfg(
         self.rewards.feet_slide.weight = -0.15
         self.rewards.knee_flexion_above_threshold.weight = -0.75
         self.rewards.knee_flexion_above_threshold.params["threshold"] = 0.75
+
+# ==================================================================================================
+# EXPERIMENTAL v3-B STAND-STILL REFINEMENT
+# Inherits every v3-A gait-refinement delta unchanged and adds ONLY:
+#   rel_standing_envs:                    0.02 -> 0.05
+#   stand_still_full_command_l1:          new, weight -0.40
+#   stand-still full-command threshold:   ||[vx,vy,wz]|| < 0.06
+# The stand-still reward acts on the 12 leg joints only (hips, knees, ankle pitch/roll).
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1UprightV3BRewardsCfg(HumanoidRlLabG1UprightRewardsCfg):
+    """v3-A rewards plus full-command-gated leg stand-still regularization."""
+
+    stand_still_full_command = RewTerm(
+        func=stand_still_joint_deviation_full_command_l1,
+        weight=-0.4,
+        params={
+            "command_name": "base_velocity",
+            "command_threshold": 0.06,
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=[
+                    ".*_hip_.*",
+                    ".*_knee_joint",
+                    ".*_ankle_pitch_joint",
+                    ".*_ankle_roll_joint",
+                ],
+            ),
+        },
+    )
+
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3BEnvCfg(
+    HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3AEnvCfg
+):
+    """Experimental v3-B: v3-A gait refinement plus conservative stand-still correction."""
+
+    rewards: HumanoidRlLabG1UprightV3BRewardsCfg = HumanoidRlLabG1UprightV3BRewardsCfg()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.commands.base_velocity.rel_standing_envs = 0.05
+

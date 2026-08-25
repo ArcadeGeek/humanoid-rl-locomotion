@@ -575,3 +575,25 @@ class track_heading_target_progress_deadband(ManagerTermBase):
 
         active = near_zero_yaw_rate & moving_command
         return progress_rate * active.to(dtype=progress_rate.dtype)
+
+# ==================================================================================================
+# EXPERIMENTAL v3-B STAND-STILL REFINEMENT
+# Unlike Isaac Lab's standard stand_still_joint_deviation_l1, this gate uses the full commanded
+# velocity vector [vx, vy, wz]. Pure yaw commands therefore remain locomotion commands and are NOT
+# regularized toward the default leg pose.
+# ==================================================================================================
+def stand_still_joint_deviation_full_command_l1(
+    env,
+    command_name: str,
+    command_threshold: float = 0.06,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize leg deviation from default pose only when the full velocity command is near zero."""
+    command = env.command_manager.get_command(command_name)
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    default_joint_pos = asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    deviation_l1 = torch.sum(torch.abs(joint_pos - default_joint_pos), dim=1)
+    stand_still_gate = torch.linalg.norm(command[:, :3], dim=1) < command_threshold
+    return deviation_l1 * stand_still_gate
+

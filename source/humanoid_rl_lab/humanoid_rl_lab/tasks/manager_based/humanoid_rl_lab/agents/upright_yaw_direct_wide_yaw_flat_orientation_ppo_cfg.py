@@ -30,3 +30,18 @@ class UprightYawDirectWideYawFlatOrientationV3APPORunnerCfg(
     def __post_init__(self) -> None:
         super().__post_init__()
         self.experiment_name = "humanoid_rl_lab_g1_v3a_gait_refinement"
+
+# ==================================================================================================
+# EXPERIMENTAL v3-B STAND-STILL REFINEMENT
+# PPO hyperparameters remain identical to v3-A/v2-G; only experiment_name is separated.
+# ==================================================================================================
+@configclass
+class UprightYawDirectWideYawFlatOrientationV3BPPORunnerCfg(
+    UprightYawDirectWideYawFlatOrientationV3APPORunnerCfg
+):
+    """PPO config for experimental v3-B stand-still refinement."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "humanoid_rl_lab_g1_v3b_standstill_refinement"
+
