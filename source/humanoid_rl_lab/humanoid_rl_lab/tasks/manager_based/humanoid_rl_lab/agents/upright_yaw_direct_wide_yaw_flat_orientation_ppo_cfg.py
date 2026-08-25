@@ -15,3 +15,18 @@ class UprightYawDirectWideYawFlatOrientationPPORunnerCfg(UprightYawDirectWideYaw
     def __post_init__(self) -> None:
         super().__post_init__()
         self.experiment_name = "humanoid_rl_lab_g1_upright_yaw_direct_wide_yaw_flat_orientation"
+
+# ==================================================================================================
+# EXPERIMENTAL v3-A GAIT REFINEMENT
+# PPO hyperparameters inherit unchanged from frozen v2-G. Only experiment_name is separated so logs
+# and checkpoints cannot be mixed with the frozen baseline.
+# ==================================================================================================
+@configclass
+class UprightYawDirectWideYawFlatOrientationV3APPORunnerCfg(
+    UprightYawDirectWideYawFlatOrientationPPORunnerCfg
+):
+    'PPO config for experimental v3-A gait refinement fine-tuning.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "humanoid_rl_lab_g1_v3a_gait_refinement"

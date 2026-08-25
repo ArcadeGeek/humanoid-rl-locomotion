@@ -355,3 +355,24 @@ class HumanoidRlLabG1UprightYawDirectTorsoRegEnvCfg(HumanoidRlLabG1UprightYawDir
         # Single scientific ablation versus Yaw-Direct v1:
         # official G1 torso-joint L1 deviation penalty, conservative 2x weight.
         self.rewards.joint_deviation_torso.weight = -0.2
+
+# ==================================================================================================
+# EXPERIMENTAL v3-A GAIT REFINEMENT
+# Frozen v2-G remains unchanged. This subclass changes ONLY:
+#   track_lin_vel_xy_exp:              +1.00 -> +1.25
+#   feet_slide:                        -0.10 -> -0.15
+#   knee_flexion_above_threshold:      -0.50 -> -0.75
+#   knee threshold:                      0.85 -> 0.75 rad
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3AEnvCfg(
+    HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationEnvCfg
+):
+    'Experimental v3-A gait refinement warm-started from frozen v2-G.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.track_lin_vel_xy_exp.weight = 1.25
+        self.rewards.feet_slide.weight = -0.15
+        self.rewards.knee_flexion_above_threshold.weight = -0.75
+        self.rewards.knee_flexion_above_threshold.params["threshold"] = 0.75
