@@ -26,6 +26,7 @@ from .mdp.upright_rewards import yaw_rate_deadzone_near_heading_target_l2
 from .mdp.upright_rewards import track_heading_target_filtered_deadband_exp
 from .mdp.upright_rewards import track_heading_target_progress_deadband
 from .mdp.upright_rewards import swing_foot_clearance_relative_exp
+from .mdp.upright_rewards import zero_command_motion_l2
 
 
 @configclass
@@ -468,4 +469,44 @@ class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3CEnvCfg(
     def __post_init__(self) -> None:
         super().__post_init__()
         self.commands.base_velocity.rel_standing_envs = 0.05
+
+# ==================================================================================================
+# EXPERIMENTAL v3-D: ZERO-MOTION + MILD KNEE-ANGLE REFINEMENT
+# Inherits v3-C directly, preserving the successful swing-clearance term.
+# Deltas relative to v3-C:
+#   1) direct zero-command base/foot planar-motion cost;
+#   2) knee-flexion threshold 0.85 -> 0.82 rad, weight unchanged at -0.5.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1UprightV3DRewardsCfg(HumanoidRlLabG1UprightV3CSwingRewardsCfg):
+    'v3-C rewards plus direct zero-motion cost.'
+
+    zero_command_motion = RewTerm(
+        func=zero_command_motion_l2,
+        weight=-5.0,
+        params={
+            "command_name": "base_velocity",
+            "command_threshold": 0.06,
+            "base_planar_scale": 1.0,
+            "foot_xy_scale": 0.25,
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                body_names=['left_ankle_roll_link', 'right_ankle_roll_link'],
+                preserve_order=True,
+            ),
+        },
+    )
+
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3DEnvCfg(
+    HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3CEnvCfg
+):
+    'Final controlled v3-D refinement warm-started from v3-C model620.'
+
+    rewards: HumanoidRlLabG1UprightV3DRewardsCfg = HumanoidRlLabG1UprightV3DRewardsCfg()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.knee_flexion_above_threshold.params["threshold"] = 0.82
 

@@ -651,3 +651,54 @@ def swing_foot_clearance_relative_exp(
     active = single_stance & (planar_command > command_threshold)
     return reward * active.to(dtype=reward.dtype)
 
+# ==================================================================================================
+# EXPERIMENTAL v3-D ZERO-COMMAND PHYSICAL-MOTION COST
+# Offline v3-C620 vs frozen-v2G audit showed persistent zero-command excess in direct physical
+# motion. Over 6-12 s, the diagnostic
+#   base_planar_speed^2 + 0.25 * mean(foot_xy_speed^2)
+# was 1.656x the frozen-v2G value.
+# This function returns a positive cost; the RewTerm weight is negative.
+# ==================================================================================================
+def zero_command_motion_l2(
+    env,
+    command_name: str,
+    command_threshold: float,
+    base_planar_scale: float,
+    foot_xy_scale: float,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    'Penalize base and foot planar motion only when the full command is near zero.'
+    if command_threshold < 0.0:
+        raise ValueError(f"command_threshold must be >= 0, got {command_threshold}")
+    if base_planar_scale < 0.0:
+        raise ValueError(f"base_planar_scale must be >= 0, got {base_planar_scale}")
+    if foot_xy_scale < 0.0:
+        raise ValueError(f"foot_xy_scale must be >= 0, got {foot_xy_scale}")
+
+    asset = env.scene[asset_cfg.name]
+
+    root_lin_vel_b = asset.data.root_lin_vel_b
+    if hasattr(root_lin_vel_b, "torch"):
+        root_lin_vel_b = root_lin_vel_b.torch
+
+    body_lin_vel_w = asset.data.body_lin_vel_w
+    if hasattr(body_lin_vel_w, "torch"):
+        body_lin_vel_w = body_lin_vel_w.torch
+
+    base_planar_sq = torch.sum(torch.square(root_lin_vel_b[:, :2]), dim=1)
+    foot_xy_sq = torch.sum(
+        torch.square(body_lin_vel_w[:, asset_cfg.body_ids, :2]),
+        dim=-1,
+    )
+    mean_foot_xy_sq = torch.mean(foot_xy_sq, dim=1)
+
+    motion_cost = (
+        base_planar_scale * base_planar_sq
+        + foot_xy_scale * mean_foot_xy_sq
+    )
+
+    command = env.command_manager.get_command(command_name)
+    full_command_norm = torch.linalg.norm(command[:, :3], dim=1)
+    active = full_command_norm < command_threshold
+    return motion_cost * active.to(dtype=motion_cost.dtype)
+

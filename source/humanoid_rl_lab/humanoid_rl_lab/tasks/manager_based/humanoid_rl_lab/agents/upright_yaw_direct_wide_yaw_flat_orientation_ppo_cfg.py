@@ -59,3 +59,17 @@ class UprightYawDirectWideYawFlatOrientationV3CPPORunnerCfg(
         super().__post_init__()
         self.experiment_name = "humanoid_rl_lab_g1_v3c_swing_clearance_refinement"
 
+# ==================================================================================================
+# EXPERIMENTAL v3-D ZERO-MOTION + KNEE REFINEMENT
+# PPO hyperparameters inherit unchanged through v3-C; only experiment_name is separated.
+# ==================================================================================================
+@configclass
+class UprightYawDirectWideYawFlatOrientationV3DPPORunnerCfg(
+    UprightYawDirectWideYawFlatOrientationV3CPPORunnerCfg
+):
+    'PPO config for final controlled v3-D refinement.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.experiment_name = "humanoid_rl_lab_g1_v3d_zero_motion_knee_refinement"
+
