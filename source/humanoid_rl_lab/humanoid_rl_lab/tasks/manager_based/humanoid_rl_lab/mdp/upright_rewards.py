@@ -597,3 +597,57 @@ def stand_still_joint_deviation_full_command_l1(
     stand_still_gate = torch.linalg.norm(command[:, :3], dim=1) < command_threshold
     return deviation_l1 * stand_still_gate
 
+# ==================================================================================================
+# EXPERIMENTAL v3-C SWING-FOOT CLEARANCE REFINEMENT
+# Empirically anchored on frozen v2-G at vx=0.40 m/s:
+# relative swing-foot height over support ankle p50 ~= 0.0295 m, p75 ~= 0.0402 m,
+# p90 ~= 0.0499 m. The target 0.045 m is deliberately between p75 and p90.
+# This reward is active only during single stance and planar locomotion commands > 0.10 m/s.
+# It is exactly zero at zero command and for pure-yaw-only commands.
+# ==================================================================================================
+def swing_foot_clearance_relative_exp(
+    env,
+    command_name: str,
+    target_height: float,
+    std: float,
+    tanh_mult: float,
+    command_threshold: float,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    'Reward conservative relative swing-foot clearance during commanded planar locomotion.'
+    if std <= 0.0:
+        raise ValueError(f"std must be > 0, got {std}")
+    if target_height < 0.0:
+        raise ValueError(f"target_height must be >= 0, got {target_height}")
+    if tanh_mult <= 0.0:
+        raise ValueError(f"tanh_mult must be > 0, got {tanh_mult}")
+    if command_threshold < 0.0:
+        raise ValueError(f"command_threshold must be >= 0, got {command_threshold}")
+
+    asset = env.scene[asset_cfg.name]
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+
+    foot_z_w = asset.data.body_pos_w.torch[:, asset_cfg.body_ids, 2]
+    foot_xy_speed = torch.linalg.norm(
+        asset.data.body_lin_vel_w.torch[:, asset_cfg.body_ids, :2], dim=-1
+    )
+    contact_time = contact_sensor.data.current_contact_time.torch[:, sensor_cfg.body_ids]
+    in_contact = contact_time > 0.0
+    single_stance = torch.sum(in_contact.int(), dim=1) == 1
+
+    support_z_w = torch.sum(
+        foot_z_w * in_contact.to(dtype=foot_z_w.dtype), dim=1, keepdim=True
+    )
+    relative_height = foot_z_w - support_z_w
+    swing_mask = (~in_contact).to(dtype=foot_z_w.dtype)
+
+    height_score = torch.exp(-torch.square((relative_height - target_height) / std))
+    speed_score = torch.tanh(tanh_mult * foot_xy_speed)
+    reward = torch.sum(height_score * speed_score * swing_mask, dim=1)
+
+    command = env.command_manager.get_command(command_name)
+    planar_command = torch.linalg.norm(command[:, :2], dim=1)
+    active = single_stance & (planar_command > command_threshold)
+    return reward * active.to(dtype=reward.dtype)
+

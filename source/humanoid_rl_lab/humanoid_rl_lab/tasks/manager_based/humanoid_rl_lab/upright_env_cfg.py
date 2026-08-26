@@ -25,6 +25,7 @@ from .mdp.upright_rewards import yaw_rate_change_near_heading_target_l2
 from .mdp.upright_rewards import yaw_rate_deadzone_near_heading_target_l2
 from .mdp.upright_rewards import track_heading_target_filtered_deadband_exp
 from .mdp.upright_rewards import track_heading_target_progress_deadband
+from .mdp.upright_rewards import swing_foot_clearance_relative_exp
 
 
 @configclass
@@ -416,6 +417,53 @@ class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3BEnvCfg(
     """Experimental v3-B: v3-A gait refinement plus conservative stand-still correction."""
 
     rewards: HumanoidRlLabG1UprightV3BRewardsCfg = HumanoidRlLabG1UprightV3BRewardsCfg()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.commands.base_velocity.rel_standing_envs = 0.05
+
+# ==================================================================================================
+# EXPERIMENTAL v3-C SWING-FOOT CLEARANCE REFINEMENT
+# Starts from frozen v2-G reward/config semantics, NOT from v3-A or v3-B.
+# Only two v3-C changes:
+#   1) standing-command exposure: 0.02 -> 0.05
+#   2) one bounded swing-foot-clearance reward, active only for planar command > 0.10 m/s
+# No v3-A knee/tracking/feet-slide changes and no v3-B standstill reward are inherited.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1UprightV3CSwingRewardsCfg(HumanoidRlLabG1UprightRewardsCfg):
+    'Frozen v2-G rewards plus one command-gated swing-clearance term.'
+
+    swing_foot_clearance_relative = RewTerm(
+        func=swing_foot_clearance_relative_exp,
+        weight=0.2,
+        params={
+            "command_name": "base_velocity",
+            "target_height": 0.045,
+            "std": 0.015,
+            "tanh_mult": 2.0,
+            "command_threshold": 0.1,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=['left_ankle_roll_link', 'right_ankle_roll_link'],
+                preserve_order=True,
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                body_names=['left_ankle_roll_link', 'right_ankle_roll_link'],
+                preserve_order=True,
+            ),
+        },
+    )
+
+
+@configclass
+class HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationV3CEnvCfg(
+    HumanoidRlLabG1UprightYawDirectWideYawFlatOrientationEnvCfg
+):
+    'Experimental v3-C swing-foot refinement warm-started from frozen v2-G.'
+
+    rewards: HumanoidRlLabG1UprightV3CSwingRewardsCfg = HumanoidRlLabG1UprightV3CSwingRewardsCfg()
 
     def __post_init__(self) -> None:
         super().__post_init__()
