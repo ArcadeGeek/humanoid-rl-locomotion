@@ -450,3 +450,26 @@ gym.register(
     },
 )
 
+
+
+# ==================================================================================================
+# v4-A GENUINE-SCRATCH OFFICIAL-BASELINE REPRODUCTION
+# New scientific family. Frozen v2-G and all v3 registrations above remain untouched.
+# Environment and PPO inherit the project-owned wrappers that are semantically identical to the
+# official Isaac Lab G1 Flat baseline; only task/experiment provenance is isolated.
+# ==================================================================================================
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4A-Official-Baseline-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4AOfficialBaselineEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4a_ppo_cfg:"
+            "V4AOfficialBaselinePPORunnerCfg"
+        ),
+    },
+)
