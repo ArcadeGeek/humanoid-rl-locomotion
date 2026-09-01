@@ -473,3 +473,21 @@ gym.register(
         ),
     },
 )
+
+# v4-B: genuine-scratch direct-yaw causal ablation from the Official-baseline v4-A task.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4B-Direct-Yaw-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4BDirectYawEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4b_ppo_cfg:"
+            "V4BDirectYawPPORunnerCfg"
+        ),
+    },
+)
+
