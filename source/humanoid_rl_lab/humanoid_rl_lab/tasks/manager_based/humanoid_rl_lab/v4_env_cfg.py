@@ -43,3 +43,18 @@ class HumanoidRlLabG1V4BDirectYawEnvCfg(HumanoidRlLabG1V4AOfficialBaselineEnvCfg
         super().__post_init__()
         self.commands.base_velocity.heading_command = False
 
+# ==================================================================================================
+# EXPERIMENTAL v4-C PRECISION REFINEMENT — GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+# ONLY scientific delta:
+#   track_lin_vel_xy_exp.params["std"]: 0.50 -> 0.25
+# Everything else inherits unchanged from v4-B / Official G1 Flat.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4CPrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-C: v4-B plus a narrower Official XY velocity-tracking reward std.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.track_lin_vel_xy_exp.params["std"] = 0.25
+

@@ -491,3 +491,14 @@ gym.register(
     },
 )
 
+# Experimental v4-C: v4-B direct-yaw plus narrower XY velocity-tracking reward std.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4C-Precision-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": __name__ + ".v4_env_cfg:" + "HumanoidRlLabG1V4CPrecisionEnvCfg",
+        "rsl_rl_cfg_entry_point": agents.__name__ + ".v4c_ppo_cfg:" + "V4CPrecisionPPORunnerCfg",
+    },
+)
+
