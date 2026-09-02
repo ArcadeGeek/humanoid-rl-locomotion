@@ -13,7 +13,10 @@ Scientific purpose:
 No imitation, reference trajectory, gait clock, custom knee penalty, or v2/v3 inheritance is used.
 """
 
+from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
+
+from .mdp.v4_rewards import zero_command_motion_l2
 
 from .humanoid_rl_lab_env_cfg import HumanoidRlLabEnvCfg
 
@@ -73,3 +76,35 @@ class HumanoidRlLabG1V4DStandingExposureEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg
     def __post_init__(self) -> None:
         super().__post_init__()
         self.commands.base_velocity.rel_standing_envs = 0.05
+
+# ==================================================================================================
+# EXPERIMENTAL v4-E ZERO-COMMAND PHYSICAL-MOTION ABLATION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+# ONLY scientific intervention:
+#   add zero_command_motion_l2, active only when ||[vx, vy, wz]|| < 0.06
+#   weight=-5.0, base_planar_scale=1.0, foot_xy_scale=0.25
+# rel_standing_envs remains the v4-B / Official value 0.02.
+# No v4-C precision change, no v4-D standing-exposure change, no joint-pose standing reward.
+# No imitation, reference motion, or gait clock.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4EZeroCommandMotionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-E: v4-B plus a full-command-gated zero-command physical-motion cost.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.zero_command_motion = RewTerm(
+            func=zero_command_motion_l2,
+            weight=-5.0,
+            params={
+                "command_name": "base_velocity",
+                "command_threshold": 0.06,
+                "base_planar_scale": 1.0,
+                "foot_xy_scale": 0.25,
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
+                    preserve_order=True,
+                ),
+            },
+        )
