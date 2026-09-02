@@ -50,3 +50,23 @@ def zero_command_motion_l2(
     full_command_norm = torch.linalg.norm(command[:, :3], dim=1)
     active = full_command_norm < command_threshold
     return motion_cost * active.to(dtype=motion_cost.dtype)
+
+# ==================================================================================================
+# EXPERIMENTAL v4-F FULL-COMMAND STAND-STILL JOINT-DEVIATION COST
+# Returns a positive cost; the RewTerm weight is negative.
+# Active only when ||[vx, vy, wz]|| < command_threshold.
+# ==================================================================================================
+def stand_still_joint_deviation_full_command_l1(
+    env,
+    command_name: str,
+    command_threshold: float = 0.06,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    'Penalize leg deviation from default pose only when the full velocity command is near zero.'
+    command = env.command_manager.get_command(command_name)
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    default_joint_pos = asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    deviation_l1 = torch.sum(torch.abs(joint_pos - default_joint_pos), dim=1)
+    stand_still_gate = torch.linalg.norm(command[:, :3], dim=1) < command_threshold
+    return deviation_l1 * stand_still_gate

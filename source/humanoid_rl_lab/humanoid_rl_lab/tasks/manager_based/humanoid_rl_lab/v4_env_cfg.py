@@ -16,7 +16,10 @@ No imitation, reference trajectory, gait clock, custom knee penalty, or v2/v3 in
 from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
-from .mdp.v4_rewards import zero_command_motion_l2
+from .mdp.v4_rewards import (
+    stand_still_joint_deviation_full_command_l1,
+    zero_command_motion_l2,
+)
 
 from .humanoid_rl_lab_env_cfg import HumanoidRlLabEnvCfg
 
@@ -105,6 +108,42 @@ class HumanoidRlLabG1V4EZeroCommandMotionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCf
                     "robot",
                     body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
                     preserve_order=True,
+                ),
+            },
+        )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-F STAND-STILL JOINT-DEVIATION ABLATION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+# ONLY scientific intervention:
+#   add stand_still_joint_deviation_full_command_l1
+#   weight=-0.4
+#   active only when ||[vx, vy, wz]|| < 0.06
+#   acts on the 12 leg joints: hips, knees, ankle pitch/roll.
+# rel_standing_envs remains the v4-B / Official value 0.02.
+# No v4-C precision change, no v4-D standing-exposure change, no v4-E zero-motion reward.
+# No imitation, reference motion, or gait clock.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4FStandStillJointDeviationEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-F: v4-B plus full-command-gated leg default-pose regularization.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.stand_still_full_command = RewTerm(
+            func=stand_still_joint_deviation_full_command_l1,
+            weight=-0.4,
+            params={
+                "command_name": "base_velocity",
+                "command_threshold": 0.06,
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    joint_names=[
+                        ".*_hip_.*",
+                        ".*_knee_joint",
+                        ".*_ankle_pitch_joint",
+                        ".*_ankle_roll_joint",
+                    ],
                 ),
             },
         )

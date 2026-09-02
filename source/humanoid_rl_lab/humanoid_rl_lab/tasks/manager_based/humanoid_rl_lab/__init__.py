@@ -523,3 +523,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": agents.__name__ + ".v4e_ppo_cfg:" + "V4EZeroCommandMotionPPORunnerCfg",
     },
 )
+
+# Experimental v4-F: v4-B direct-yaw plus full-command-gated leg stand-still regularization.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4F-Stand-Still-Joint-Deviation-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": __name__ + ".v4_env_cfg:" + "HumanoidRlLabG1V4FStandStillJointDeviationEnvCfg",
+        "rsl_rl_cfg_entry_point": agents.__name__ + ".v4f_ppo_cfg:" + "V4FStandStillJointDeviationPPORunnerCfg",
+    },
+)
