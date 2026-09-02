@@ -58,3 +58,18 @@ class HumanoidRlLabG1V4CPrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
         super().__post_init__()
         self.rewards.track_lin_vel_xy_exp.params["std"] = 0.25
 
+# ==================================================================================================
+# EXPERIMENTAL v4-D STANDING-EXPOSURE ABLATION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+# ONLY behavioral/scientific delta:
+#   rel_standing_envs: 0.02 -> 0.05
+# Everything else inherits unchanged from v4-B / Official G1 Flat.
+# No custom standing reward, imitation, reference motion, or gait clock is added.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4DStandingExposureEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-D: v4-B plus increased exposure to zero-command standing environments.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.commands.base_velocity.rel_standing_envs = 0.05

@@ -502,3 +502,13 @@ gym.register(
     },
 )
 
+# Experimental v4-D: v4-B direct-yaw with increased zero-command standing exposure only.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4D-Standing-Exposure-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": __name__ + ".v4_env_cfg:" + "HumanoidRlLabG1V4DStandingExposureEnvCfg",
+        "rsl_rl_cfg_entry_point": agents.__name__ + ".v4d_ppo_cfg:" + "V4DStandingExposurePPORunnerCfg",
+    },
+)
