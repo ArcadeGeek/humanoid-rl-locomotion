@@ -534,3 +534,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": agents.__name__ + ".v4f_ppo_cfg:" + "V4FStandStillJointDeviationPPORunnerCfg",
     },
 )
+
+# Experimental v4-G: v4-B direct-yaw plus full zero-command physical-motion regularization.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4G-Zero-Command-Full-Motion-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": __name__ + ".v4_env_cfg:" + "HumanoidRlLabG1V4GZeroCommandFullMotionEnvCfg",
+        "rsl_rl_cfg_entry_point": agents.__name__ + ".v4g_ppo_cfg:" + "V4GZeroCommandFullMotionPPORunnerCfg",
+    },
+)
