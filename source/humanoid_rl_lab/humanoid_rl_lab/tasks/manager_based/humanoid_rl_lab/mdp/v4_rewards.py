@@ -127,3 +127,71 @@ def zero_command_full_motion_l2(
     full_command_norm = torch.linalg.norm(command[:, :3], dim=1)
     active = full_command_norm < command_threshold
     return motion_cost * active.to(dtype=motion_cost.dtype)
+
+# ==================================================================================================
+# EXPERIMENTAL v4-H BOUNDED ZERO-COMMAND FULL-MOTION COST
+# Positive physical-motion cost; use with a negative RewTerm weight.
+#
+# Scientific parent: v4-B Direct-Yaw.
+# Active only when ||[vx_cmd, vy_cmd, wz_cmd]|| < command_threshold.
+#
+# Yaw contribution:
+#   1 - exp(-(wz / yaw_sigma)^2)
+#
+# This keeps the yaw contribution in [0, 1], preventing the unbounded wz^2
+# early-scratch outliers diagnosed in v4-G.
+# ==================================================================================================
+def zero_command_bounded_full_motion(
+    env,
+    command_name: str,
+    command_threshold: float,
+    base_planar_scale: float,
+    yaw_sigma: float,
+    foot_xy_scale: float,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    'Penalize zero-command physical motion with a bounded yaw-rate contribution.'
+    if command_threshold < 0.0:
+        raise ValueError(f"command_threshold must be >= 0, got {command_threshold}")
+    if base_planar_scale < 0.0:
+        raise ValueError(f"base_planar_scale must be >= 0, got {base_planar_scale}")
+    if yaw_sigma <= 0.0:
+        raise ValueError(f"yaw_sigma must be > 0, got {yaw_sigma}")
+    if foot_xy_scale < 0.0:
+        raise ValueError(f"foot_xy_scale must be >= 0, got {foot_xy_scale}")
+
+    asset = env.scene[asset_cfg.name]
+
+    root_lin_vel_b = asset.data.root_lin_vel_b
+    if hasattr(root_lin_vel_b, "torch"):
+        root_lin_vel_b = root_lin_vel_b.torch
+
+    root_ang_vel_b = asset.data.root_ang_vel_b
+    if hasattr(root_ang_vel_b, "torch"):
+        root_ang_vel_b = root_ang_vel_b.torch
+
+    body_lin_vel_w = asset.data.body_lin_vel_w
+    if hasattr(body_lin_vel_w, "torch"):
+        body_lin_vel_w = body_lin_vel_w.torch
+
+    base_planar_sq = torch.sum(torch.square(root_lin_vel_b[:, :2]), dim=1)
+
+    yaw_rate = root_ang_vel_b[:, 2]
+    bounded_yaw = 1.0 - torch.exp(-torch.square(yaw_rate / yaw_sigma))
+
+    foot_xy_sq = torch.sum(
+        torch.square(body_lin_vel_w[:, asset_cfg.body_ids, :2]),
+        dim=-1,
+    )
+    mean_foot_xy_sq = torch.mean(foot_xy_sq, dim=1)
+
+    motion_cost = (
+        base_planar_scale * base_planar_sq
+        + bounded_yaw
+        + foot_xy_scale * mean_foot_xy_sq
+    )
+
+    command = env.command_manager.get_command(command_name)
+    full_command_norm = torch.linalg.norm(command[:, :3], dim=1)
+    active = full_command_norm < command_threshold
+    return motion_cost * active.to(dtype=motion_cost.dtype)

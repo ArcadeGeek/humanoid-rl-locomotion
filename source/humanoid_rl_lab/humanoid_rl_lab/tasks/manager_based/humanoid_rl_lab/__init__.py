@@ -545,3 +545,20 @@ gym.register(
         "rsl_rl_cfg_entry_point": agents.__name__ + ".v4g_ppo_cfg:" + "V4GZeroCommandFullMotionPPORunnerCfg",
     },
 )
+
+# Experimental v4-H: v4-B direct-yaw plus bounded zero-command full-motion regularization.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4H-Bounded-Zero-Command-Full-Motion-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4HBoundedZeroCommandFullMotionEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4h_ppo_cfg:"
+            "V4HBoundedZeroCommandFullMotionPPORunnerCfg"
+        ),
+    },
+)

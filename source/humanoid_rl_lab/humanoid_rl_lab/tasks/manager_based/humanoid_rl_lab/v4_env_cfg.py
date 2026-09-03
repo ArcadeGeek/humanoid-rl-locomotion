@@ -18,6 +18,7 @@ from isaaclab.utils.configclass import configclass
 
 from .mdp.v4_rewards import (
     stand_still_joint_deviation_full_command_l1,
+    zero_command_bounded_full_motion,
     zero_command_full_motion_l2,
     zero_command_motion_l2,
 )
@@ -173,6 +174,46 @@ class HumanoidRlLabG1V4GZeroCommandFullMotionEnvCfg(HumanoidRlLabG1V4BDirectYawE
                 "command_threshold": 0.06,
                 "base_planar_scale": 1.0,
                 "yaw_rate_scale": 1.0,
+                "foot_xy_scale": 0.25,
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
+                    preserve_order=True,
+                ),
+            },
+        )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-H BOUNDED ZERO-COMMAND FULL-MOTION ABLATION - GENUINE SCRATCH
+#
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add zero_command_bounded_full_motion
+#
+#   gate                  : ||[vx, vy, wz]|| < 0.06
+#   weight                : -5.0
+#   base_planar_scale     : 1.0
+#   yaw bounded form      : 1 - exp(-(wz / 0.20)^2)
+#   foot_xy_scale         : 0.25
+#
+# rel_standing_envs remains inherited from v4-B: 0.02.
+# No v4-C/v4-D/v4-E/v4-F/v4-G scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4HBoundedZeroCommandFullMotionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-H: v4-B plus bounded full-motion regularization at near-zero command.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.rewards.zero_command_bounded_full_motion = RewTerm(
+            func=zero_command_bounded_full_motion,
+            weight=-5.0,
+            params={
+                "command_name": "base_velocity",
+                "command_threshold": 0.06,
+                "base_planar_scale": 1.0,
+                "yaw_sigma": 0.20,
                 "foot_xy_scale": 0.25,
                 "asset_cfg": SceneEntityCfg(
                     "robot",
