@@ -5,7 +5,7 @@
 
 import torch
 
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 
 
 def zero_command_motion_l2(
@@ -195,3 +195,95 @@ def zero_command_bounded_full_motion(
     full_command_norm = torch.linalg.norm(command[:, :3], dim=1)
     active = full_command_norm < command_threshold
     return motion_cost * active.to(dtype=motion_cost.dtype)
+
+# ==================================================================================================
+# EXPERIMENTAL v4-J LOW-FREQUENCY STRAIGHT-LINE LATERAL-DRIFT COST
+# Positive bounded cost; use with a negative RewTerm weight.
+#
+# Scientific parent: v4-B Direct-Yaw.
+#
+# The instantaneous body-frame lateral velocity error is low-pass filtered independently per
+# environment. This targets persistent lateral drift without directly penalizing normal high-frequency
+# gait-cycle sway. The EMA is reset both at episode reset and whenever the command leaves the
+# straight-forward gate.
+# ==================================================================================================
+class straight_line_lateral_velocity_ema_bounded(ManagerTermBase):
+    'Bounded cost on low-frequency body-frame lateral velocity error during straight locomotion.'
+
+    def __init__(self, cfg: RewardTermCfg, env):
+        super().__init__(cfg, env)
+
+        tau_s = float(cfg.params["tau_s"])
+        sigma = float(cfg.params["sigma"])
+        min_forward_command = float(cfg.params["min_forward_command"])
+        lateral_command_threshold = float(cfg.params["lateral_command_threshold"])
+        yaw_command_threshold = float(cfg.params["yaw_command_threshold"])
+
+        if tau_s <= 0.0:
+            raise ValueError(f"tau_s must be > 0, got {tau_s}")
+        if sigma <= 0.0:
+            raise ValueError(f"sigma must be > 0, got {sigma}")
+        if min_forward_command < 0.0:
+            raise ValueError(
+                f"min_forward_command must be >= 0, got {min_forward_command}"
+            )
+        if lateral_command_threshold < 0.0:
+            raise ValueError(
+                "lateral_command_threshold must be >= 0, "
+                f"got {lateral_command_threshold}"
+            )
+        if yaw_command_threshold < 0.0:
+            raise ValueError(
+                f"yaw_command_threshold must be >= 0, got {yaw_command_threshold}"
+            )
+
+        if not hasattr(env, "step_dt"):
+            raise AttributeError("environment does not expose step_dt required by v4-J EMA reward")
+        step_dt = float(env.step_dt)
+        if step_dt <= 0.0:
+            raise ValueError(f"env.step_dt must be > 0, got {step_dt}")
+
+        self._alpha = 1.0 - torch.exp(
+            torch.tensor(-step_dt / tau_s, device=env.device, dtype=torch.float32)
+        )
+        self._ema_error = torch.zeros(env.num_envs, device=env.device, dtype=torch.float32)
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self._ema_error[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env,
+        command_name: str,
+        tau_s: float,
+        sigma: float,
+        min_forward_command: float,
+        lateral_command_threshold: float,
+        yaw_command_threshold: float,
+        asset_cfg: SceneEntityCfg,
+    ) -> torch.Tensor:
+        del tau_s
+
+        command = env.command_manager.get_command(command_name)
+        asset = env.scene[asset_cfg.name]
+
+        root_lin_vel_b = asset.data.root_lin_vel_b
+        if hasattr(root_lin_vel_b, "torch"):
+            root_lin_vel_b = root_lin_vel_b.torch
+
+        lateral_error = root_lin_vel_b[:, 1] - command[:, 1]
+
+        active = (
+            (command[:, 0] > min_forward_command)
+            & (torch.abs(command[:, 1]) < lateral_command_threshold)
+            & (torch.abs(command[:, 2]) < yaw_command_threshold)
+        )
+
+        updated = self._ema_error + self._alpha * (lateral_error - self._ema_error)
+        self._ema_error[:] = torch.where(active, updated, torch.zeros_like(updated))
+
+        cost = 1.0 - torch.exp(-torch.square(self._ema_error / sigma))
+        return cost * active.to(dtype=cost.dtype)
+

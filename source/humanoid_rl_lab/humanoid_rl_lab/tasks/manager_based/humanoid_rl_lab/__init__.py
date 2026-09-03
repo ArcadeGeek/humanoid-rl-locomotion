@@ -580,3 +580,20 @@ gym.register(
     },
 )
 
+# Experimental v4-J: v4-B direct-yaw plus low-frequency straight-line lateral-drift precision.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4J-Straight-Line-Precision-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4JStraightLinePrecisionEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4j_ppo_cfg:"
+            "V4JStraightLinePrecisionPPORunnerCfg"
+        ),
+    },
+)
+

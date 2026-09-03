@@ -19,6 +19,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CurriculumCfg as LocomotionVelocityCurriculumCfg
 
 from .mdp.v4_rewards import (
+    straight_line_lateral_velocity_ema_bounded,
     stand_still_joint_deviation_full_command_l1,
     zero_command_bounded_full_motion,
     zero_command_full_motion_l2,
@@ -286,6 +287,49 @@ class HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionEnvCfg(HumanoidRlLabG
                     body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
                     preserve_order=True,
                 ),
+            },
+        )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-J LOW-FREQUENCY STRAIGHT-LINE LATERAL-DRIFT PRECISION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add straight_line_lateral_velocity_ema_bounded
+#
+# Reward semantics:
+#   error                     : body-frame vy - commanded vy
+#   EMA tau                   : 0.75 s
+#   bounded sigma             : 0.03 m/s
+#   weight                    : -0.25
+#   active iff                : vx_cmd > 0.10 m/s
+#                               |vy_cmd| < 0.10 m/s
+#                               |wz_cmd| < 0.20 rad/s
+#   EMA reset                 : episode reset and whenever the straight-line gate is inactive
+#
+# Everything else inherits unchanged from v4-B / Official G1 Flat:
+# command ranges, direct-yaw semantics, rewards, observations, perturbation events, actions,
+# scene, terminations, rel_standing_envs and PPO hyperparameters.
+# No v4-C/v4-D/v4-E/v4-F/v4-G/v4-H/v4-I scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4JStraightLinePrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-J: v4-B plus low-frequency lateral-drift precision during straight locomotion.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.rewards.straight_line_lateral_velocity_ema_bounded = RewTerm(
+            func=straight_line_lateral_velocity_ema_bounded,
+            weight=-0.25,
+            params={
+                "command_name": "base_velocity",
+                "tau_s": 0.75,
+                "sigma": 0.03,
+                "min_forward_command": 0.10,
+                "lateral_command_threshold": 0.10,
+                "yaw_command_threshold": 0.20,
+                "asset_cfg": SceneEntityCfg("robot"),
             },
         )
 
