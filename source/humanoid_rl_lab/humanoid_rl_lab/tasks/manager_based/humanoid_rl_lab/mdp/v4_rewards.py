@@ -850,3 +850,205 @@ class geometric_command_path_pose_bounded(ManagerTermBase):
         self._was_active[:] = active
 
         return cost
+
+# ==================================================================================================
+# EXPERIMENTAL v4-M LOW-FREQUENCY LOCAL COMMAND-RESIDUAL COST
+# Positive bounded cost; use with a negative RewTerm weight.
+#
+# Scientific parent: v4-B Direct-Yaw.
+#
+# residual_vy = body_vy - command_vy
+# residual_wz = body_wz - command_wz
+#
+# alpha = 1 - exp(-step_dt / tau_s)
+# ema_t = (1 - alpha) * ema_(t-1) + alpha * residual_t
+#
+# cost = 1 - exp(
+#     -(ema_vy / sigma_vy_mps)^2
+#     -(ema_wz / sigma_wz_radps)^2
+# )
+#
+# Fixed sizing from frozen v4-B/v4-K/v4-L seed42 traces:
+#   tau_s          = 1.50 s
+#   sigma_vy_mps   = 0.030 m/s
+#   sigma_wz_radps = 0.025 rad/s
+#
+# State resets on episode reset, gate exit/re-entry, and command change/resample.
+# No path anchor, no geometric integration, no reference trajectory.
+# ==================================================================================================
+class low_frequency_command_residual_vy_wz_bounded(ManagerTermBase):
+    'Bounded EMA cost on low-frequency body-frame vy/wz command residuals.'
+
+    def __init__(self, cfg: RewardTermCfg, env):
+        super().__init__(cfg, env)
+
+        tau_s = float(cfg.params["tau_s"])
+        sigma_vy_mps = float(cfg.params["sigma_vy_mps"])
+        sigma_wz_radps = float(cfg.params["sigma_wz_radps"])
+        min_forward_command = float(cfg.params["min_forward_command"])
+        lateral_command_threshold = float(cfg.params["lateral_command_threshold"])
+        yaw_command_threshold = float(cfg.params["yaw_command_threshold"])
+        command_change_threshold = float(cfg.params["command_change_threshold"])
+
+        if tau_s <= 0.0:
+            raise ValueError(f"tau_s must be > 0, got {tau_s}")
+        if sigma_vy_mps <= 0.0:
+            raise ValueError(f"sigma_vy_mps must be > 0, got {sigma_vy_mps}")
+        if sigma_wz_radps <= 0.0:
+            raise ValueError(f"sigma_wz_radps must be > 0, got {sigma_wz_radps}")
+        if min_forward_command < 0.0:
+            raise ValueError(
+                f"min_forward_command must be >= 0, got {min_forward_command}"
+            )
+        if lateral_command_threshold < 0.0:
+            raise ValueError(
+                "lateral_command_threshold must be >= 0, "
+                f"got {lateral_command_threshold}"
+            )
+        if yaw_command_threshold < 0.0:
+            raise ValueError(
+                f"yaw_command_threshold must be >= 0, got {yaw_command_threshold}"
+            )
+        if command_change_threshold <= 0.0:
+            raise ValueError(
+                "command_change_threshold must be > 0, "
+                f"got {command_change_threshold}"
+            )
+        if not hasattr(env, "step_dt"):
+            raise AttributeError(
+                "environment does not expose step_dt required by v4-M reward"
+            )
+
+        step_dt = float(env.step_dt)
+        if step_dt <= 0.0:
+            raise ValueError(f"env.step_dt must be > 0, got {step_dt}")
+
+        self._tau_s = tau_s
+        self._sigma_vy_mps = sigma_vy_mps
+        self._sigma_wz_radps = sigma_wz_radps
+        self._min_forward_command = min_forward_command
+        self._lateral_command_threshold = lateral_command_threshold
+        self._yaw_command_threshold = yaw_command_threshold
+        self._command_change_threshold = command_change_threshold
+
+        import math
+
+        self._alpha = 1.0 - math.exp(-step_dt / tau_s)
+
+        self._ema_vy_residual = torch.zeros(
+            env.num_envs,
+            device=env.device,
+            dtype=torch.float32,
+        )
+        self._ema_wz_residual = torch.zeros(
+            env.num_envs,
+            device=env.device,
+            dtype=torch.float32,
+        )
+        self._stored_command = torch.zeros(
+            (env.num_envs, 3),
+            device=env.device,
+            dtype=torch.float32,
+        )
+        self._was_active = torch.zeros(
+            env.num_envs,
+            device=env.device,
+            dtype=torch.bool,
+        )
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+
+        self._ema_vy_residual[env_ids] = 0.0
+        self._ema_wz_residual[env_ids] = 0.0
+        self._stored_command[env_ids] = 0.0
+        self._was_active[env_ids] = False
+
+    def __call__(
+        self,
+        env,
+        command_name: str,
+        tau_s: float,
+        sigma_vy_mps: float,
+        sigma_wz_radps: float,
+        min_forward_command: float,
+        lateral_command_threshold: float,
+        yaw_command_threshold: float,
+        command_change_threshold: float,
+        asset_cfg: SceneEntityCfg,
+    ) -> torch.Tensor:
+        del (
+            tau_s,
+            sigma_vy_mps,
+            sigma_wz_radps,
+            min_forward_command,
+            lateral_command_threshold,
+            yaw_command_threshold,
+            command_change_threshold,
+        )
+
+        command = env.command_manager.get_command(command_name)[:, :3]
+        asset = env.scene[asset_cfg.name]
+
+        body_lin_vel = asset.data.root_lin_vel_b
+        body_ang_vel = asset.data.root_ang_vel_b
+
+        if hasattr(body_lin_vel, "torch"):
+            body_lin_vel = body_lin_vel.torch
+        if hasattr(body_ang_vel, "torch"):
+            body_ang_vel = body_ang_vel.torch
+
+        active = (
+            (command[:, 0] > self._min_forward_command)
+            & (torch.abs(command[:, 1]) < self._lateral_command_threshold)
+            & (torch.abs(command[:, 2]) < self._yaw_command_threshold)
+        )
+
+        command_delta = torch.max(
+            torch.abs(command - self._stored_command),
+            dim=1,
+        ).values
+        command_changed = (
+            command_delta > self._command_change_threshold
+        )
+        segment_start = active & (
+            (~self._was_active) | command_changed
+        )
+
+        if torch.any(segment_start):
+            self._ema_vy_residual[segment_start] = 0.0
+            self._ema_wz_residual[segment_start] = 0.0
+            self._stored_command[segment_start] = command[segment_start]
+
+        inactive = ~active
+        if torch.any(inactive):
+            self._ema_vy_residual[inactive] = 0.0
+            self._ema_wz_residual[inactive] = 0.0
+
+        residual_vy = body_lin_vel[:, 1] - command[:, 1]
+        residual_wz = body_ang_vel[:, 2] - command[:, 2]
+
+        alpha = self._alpha
+
+        if torch.any(active):
+            self._ema_vy_residual[active] = (
+                (1.0 - alpha) * self._ema_vy_residual[active]
+                + alpha * residual_vy[active]
+            )
+            self._ema_wz_residual[active] = (
+                (1.0 - alpha) * self._ema_wz_residual[active]
+                + alpha * residual_wz[active]
+            )
+
+        exponent = (
+            torch.square(self._ema_vy_residual / self._sigma_vy_mps)
+            + torch.square(self._ema_wz_residual / self._sigma_wz_radps)
+        )
+
+        cost = 1.0 - torch.exp(-exponent)
+        cost = cost * active.to(dtype=cost.dtype)
+
+        self._was_active[:] = active
+
+        return cost

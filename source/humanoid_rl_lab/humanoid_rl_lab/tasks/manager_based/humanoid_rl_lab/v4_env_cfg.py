@@ -19,6 +19,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CurriculumCfg as LocomotionVelocityCurriculumCfg
 
 from .mdp.v4_rewards import (
+    low_frequency_command_residual_vy_wz_bounded,
     geometric_command_path_pose_bounded,
     geometric_command_path_cross_track_bounded,
     straight_line_lateral_velocity_ema_bounded,
@@ -427,6 +428,51 @@ class HumanoidRlLabG1V4LPathPosePrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCf
                 "yaw_command_threshold": 0.20,
                 "command_change_threshold": 1.0e-6,
                 "yaw_rate_epsilon": 1.0e-4,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-M LOW-FREQUENCY LOCAL RESIDUAL - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add one bounded EMA reward on command-consistent body-frame vy/wz residuals
+#
+#   tau_s                       : 1.50 s
+#   sigma_vy_mps                : 0.030 m/s
+#   sigma_wz_radps              : 0.025 rad/s
+#   weight                      : -0.10
+#   active iff                  : vx_cmd > 0.10 m/s
+#                                 |vy_cmd| < 0.10 m/s
+#                                 |wz_cmd| < 0.20 rad/s
+#   command-change threshold    : 1e-6
+#
+# residual_vy = body_vy - command_vy
+# residual_wz = body_wz - command_wz
+#
+# Everything else inherits unchanged from v4-B / Official G1 Flat.
+# No v4-C/v4-D/v4-E/v4-F/v4-G/v4-H/v4-I/v4-J/v4-K/v4-L scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4MLowFreqLocalResidualEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-M: v4-B plus low-frequency command-residual vy/wz precision.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.rewards.low_frequency_command_residual_vy_wz_bounded = RewTerm(
+            func=low_frequency_command_residual_vy_wz_bounded,
+            weight=-0.10,
+            params={
+                "command_name": "base_velocity",
+                "tau_s": 1.50,
+                "sigma_vy_mps": 0.030,
+                "sigma_wz_radps": 0.025,
+                "min_forward_command": 0.10,
+                "lateral_command_threshold": 0.10,
+                "yaw_command_threshold": 0.20,
+                "command_change_threshold": 1.0e-6,
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )

@@ -630,3 +630,20 @@ gym.register(
         ),
     },
 )
+
+# Experimental v4-M: v4-B direct-yaw plus low-frequency local vy/wz command-residual precision.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4M-LowFreq-Local-Residual-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4MLowFreqLocalResidualEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4m_ppo_cfg:"
+            "V4MLowFreqLocalResidualPPORunnerCfg"
+        ),
+    },
+)
