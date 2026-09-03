@@ -13,8 +13,10 @@ Scientific purpose:
 No imitation, reference trajectory, gait clock, custom knee penalty, or v2/v3 inheritance is used.
 """
 
-from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
+from isaaclab.envs.mdp import modify_reward_weight
+from isaaclab.managers import CurriculumTermCfg as CurrTerm, RewardTermCfg as RewTerm, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
+from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CurriculumCfg as LocomotionVelocityCurriculumCfg
 
 from .mdp.v4_rewards import (
     stand_still_joint_deviation_full_command_l1,
@@ -222,3 +224,68 @@ class HumanoidRlLabG1V4HBoundedZeroCommandFullMotionEnvCfg(HumanoidRlLabG1V4BDir
                 ),
             },
         )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-I DELAYED BOUNDED ZERO-COMMAND FULL-MOTION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add zero_command_bounded_full_motion, but delay its weight with Isaac Lab native curriculum.
+#
+# Reward semantics once active:
+#   gate              : ||[vx, vy, wz]|| < 0.06
+#   target weight     : -5.0
+#   base_planar_scale : 1.0
+#   yaw bounded form  : 1 - exp(-(wz / 0.20)^2)
+#   foot_xy_scale     : 0.25
+#
+# Curriculum semantics:
+#   initial weight    : 0.0
+#   target weight     : -5.0
+#   native scheduler  : isaaclab.envs.mdp.modify_reward_weight
+#   switch condition  : common_step_counter > 4800, evaluated on reset
+#
+# With 24 control steps per PPO iteration, 4800 control steps correspond to 200 iterations.
+# rel_standing_envs remains inherited from v4-B: 0.02.
+# No v4-C/v4-D/v4-E/v4-F/v4-G/v4-H scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionCurriculumCfg(LocomotionVelocityCurriculumCfg):
+    "v4-I curriculum: delay bounded zero-command regularization until locomotion has emerged."
+
+    zero_command_bounded_full_motion_weight = CurrTerm(
+        func=modify_reward_weight,
+        params={
+            "term_name": "zero_command_bounded_full_motion",
+            "weight": -5.0,
+            "num_steps": 4800,
+        },
+    )
+
+
+@configclass
+class HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    "v4-I: v4-B plus delayed bounded zero-command full-motion regularization."
+
+    curriculum: HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionCurriculumCfg = HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionCurriculumCfg()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.rewards.zero_command_bounded_full_motion = RewTerm(
+            func=zero_command_bounded_full_motion,
+            weight=0.0,
+            params={
+                "command_name": "base_velocity",
+                "command_threshold": 0.06,
+                "base_planar_scale": 1.0,
+                "yaw_sigma": 0.2,
+                "foot_xy_scale": 0.25,
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
+                    preserve_order=True,
+                ),
+            },
+        )
+

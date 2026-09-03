@@ -562,3 +562,21 @@ gym.register(
         ),
     },
 )
+
+# Experimental v4-I: v4-B direct-yaw plus delayed bounded zero-command full-motion regularization.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4I-Delayed-Bounded-Zero-Command-Full-Motion-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4IDelayedBoundedZeroCommandFullMotionEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4i_ppo_cfg:"
+            "V4IDelayedBoundedZeroCommandFullMotionPPORunnerCfg"
+        ),
+    },
+)
+
