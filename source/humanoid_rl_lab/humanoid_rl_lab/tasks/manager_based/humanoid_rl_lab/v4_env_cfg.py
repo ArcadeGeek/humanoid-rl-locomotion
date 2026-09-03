@@ -19,6 +19,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CurriculumCfg as LocomotionVelocityCurriculumCfg
 
 from .mdp.v4_rewards import (
+    geometric_command_path_cross_track_bounded,
     straight_line_lateral_velocity_ema_bounded,
     stand_still_joint_deviation_full_command_l1,
     zero_command_bounded_full_motion,
@@ -333,3 +334,51 @@ class HumanoidRlLabG1V4JStraightLinePrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawE
             },
         )
 
+# ==================================================================================================
+# EXPERIMENTAL v4-K GEOMETRIC COMMAND-PATH PRECISION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add geometric_command_path_cross_track_bounded
+#
+# Reward semantics:
+#   quantity                    : geometric lateral cross-track error
+#   reference                   : command-consistent planar path anchored at command-segment start
+#   sigma                       : 0.20 m
+#   weight                      : -0.15
+#   active iff                 : vx_cmd > 0.10 m/s
+#                                |vy_cmd| < 0.10 m/s
+#                                |wz_cmd| < 0.20 rad/s
+#   segment reset              : episode reset, gate exit/re-entry, command resample/change
+#   command-change threshold   : 1e-6
+#   yaw-rate analytic epsilon  : 1e-4 rad/s
+#
+# At the thesis straight command [0.40, 0, 0], the reference is exactly a straight line anchored
+# to the robot pose at the start of the command segment.
+#
+# Everything else inherits unchanged from v4-B / Official G1 Flat:
+# command ranges, direct-yaw semantics, Official rewards, observations, perturbation events, actions,
+# scene, terminations, rel_standing_envs and PPO hyperparameters.
+# No v4-C/v4-D/v4-E/v4-F/v4-G/v4-H/v4-I/v4-J scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4KGeometricPathPrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-K: v4-B plus bounded geometric cross-track precision.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.rewards.geometric_command_path_cross_track_bounded = RewTerm(
+            func=geometric_command_path_cross_track_bounded,
+            weight=-0.15,
+            params={
+                "command_name": "base_velocity",
+                "sigma_m": 0.20,
+                "min_forward_command": 0.10,
+                "lateral_command_threshold": 0.10,
+                "yaw_command_threshold": 0.20,
+                "command_change_threshold": 1.0e-6,
+                "yaw_rate_epsilon": 1.0e-4,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )

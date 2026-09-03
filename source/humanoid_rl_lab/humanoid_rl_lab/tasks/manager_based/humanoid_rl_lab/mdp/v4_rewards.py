@@ -287,3 +287,245 @@ class straight_line_lateral_velocity_ema_bounded(ManagerTermBase):
         cost = 1.0 - torch.exp(-torch.square(self._ema_error / sigma))
         return cost * active.to(dtype=cost.dtype)
 
+# ==================================================================================================
+# EXPERIMENTAL v4-K GEOMETRIC COMMAND-PATH CROSS-TRACK COST
+# Positive bounded cost; use with a negative RewTerm weight.
+#
+# Scientific parent: v4-B Direct-Yaw.
+#
+# For near-straight commands, anchor the robot planar pose when the command segment begins and
+# construct the geometric path implied by the constant body-frame command [vx, vy, wz].
+# Penalize only lateral cross-track error to that path; along-track speed remains governed by
+# the Official velocity-tracking rewards.
+#
+# At [0.40, 0, 0] the reference path is exactly a straight line in the initial heading direction.
+# Small nonzero vy/wz inside the gate are handled by the command-consistent analytic path, so the
+# reward does not incorrectly force a turning command onto a fixed line.
+#
+# State resets:
+#   - episode reset
+#   - gate exit/re-entry
+#   - command change/resample while remaining inside the gate
+# ==================================================================================================
+class geometric_command_path_cross_track_bounded(ManagerTermBase):
+    'Bounded geometric cross-track cost for near-straight command segments.'
+
+    def __init__(self, cfg: RewardTermCfg, env):
+        super().__init__(cfg, env)
+
+        sigma_m = float(cfg.params["sigma_m"])
+        min_forward_command = float(cfg.params["min_forward_command"])
+        lateral_command_threshold = float(cfg.params["lateral_command_threshold"])
+        yaw_command_threshold = float(cfg.params["yaw_command_threshold"])
+        command_change_threshold = float(cfg.params["command_change_threshold"])
+        yaw_rate_epsilon = float(cfg.params["yaw_rate_epsilon"])
+
+        if sigma_m <= 0.0:
+            raise ValueError(f"sigma_m must be > 0, got {sigma_m}")
+        if min_forward_command < 0.0:
+            raise ValueError(
+                f"min_forward_command must be >= 0, got {min_forward_command}"
+            )
+        if lateral_command_threshold < 0.0:
+            raise ValueError(
+                "lateral_command_threshold must be >= 0, "
+                f"got {lateral_command_threshold}"
+            )
+        if yaw_command_threshold < 0.0:
+            raise ValueError(
+                f"yaw_command_threshold must be >= 0, got {yaw_command_threshold}"
+            )
+        if command_change_threshold <= 0.0:
+            raise ValueError(
+                f"command_change_threshold must be > 0, got {command_change_threshold}"
+            )
+        if yaw_rate_epsilon <= 0.0:
+            raise ValueError(
+                f"yaw_rate_epsilon must be > 0, got {yaw_rate_epsilon}"
+            )
+        if not hasattr(env, "step_dt"):
+            raise AttributeError(
+                "environment does not expose step_dt required by v4-K geometric reward"
+            )
+
+        step_dt = float(env.step_dt)
+        if step_dt <= 0.0:
+            raise ValueError(f"env.step_dt must be > 0, got {step_dt}")
+
+        self._sigma_m = sigma_m
+        self._min_forward_command = min_forward_command
+        self._lateral_command_threshold = lateral_command_threshold
+        self._yaw_command_threshold = yaw_command_threshold
+        self._command_change_threshold = command_change_threshold
+        self._yaw_rate_epsilon = yaw_rate_epsilon
+        self._step_dt = step_dt
+
+        self._anchor_pos_xy = torch.zeros(
+            (env.num_envs, 2), device=env.device, dtype=torch.float32
+        )
+        self._anchor_heading = torch.zeros(
+            env.num_envs, device=env.device, dtype=torch.float32
+        )
+        self._stored_command = torch.zeros(
+            (env.num_envs, 3), device=env.device, dtype=torch.float32
+        )
+        self._elapsed_s = torch.zeros(
+            env.num_envs, device=env.device, dtype=torch.float32
+        )
+        self._was_active = torch.zeros(
+            env.num_envs, device=env.device, dtype=torch.bool
+        )
+
+    def reset(self, env_ids=None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+
+        self._anchor_pos_xy[env_ids] = 0.0
+        self._anchor_heading[env_ids] = 0.0
+        self._stored_command[env_ids] = 0.0
+        self._elapsed_s[env_ids] = 0.0
+        self._was_active[env_ids] = False
+
+    @staticmethod
+    def _heading_from_wxyz(quat_wxyz: torch.Tensor) -> torch.Tensor:
+        qw = quat_wxyz[:, 0]
+        qx = quat_wxyz[:, 1]
+        qy = quat_wxyz[:, 2]
+        qz = quat_wxyz[:, 3]
+
+        sin_yaw = 2.0 * (qw * qz + qx * qy)
+        cos_yaw = 1.0 - 2.0 * (qy * qy + qz * qz)
+        return torch.atan2(sin_yaw, cos_yaw)
+
+    def __call__(
+        self,
+        env,
+        command_name: str,
+        sigma_m: float,
+        min_forward_command: float,
+        lateral_command_threshold: float,
+        yaw_command_threshold: float,
+        command_change_threshold: float,
+        yaw_rate_epsilon: float,
+        asset_cfg: SceneEntityCfg,
+    ) -> torch.Tensor:
+        del (
+            sigma_m,
+            min_forward_command,
+            lateral_command_threshold,
+            yaw_command_threshold,
+            command_change_threshold,
+            yaw_rate_epsilon,
+        )
+
+        command = env.command_manager.get_command(command_name)[:, :3]
+        asset = env.scene[asset_cfg.name]
+
+        root_pos_w = asset.data.root_pos_w
+        root_quat_w = asset.data.root_quat_w
+
+        if hasattr(root_pos_w, "torch"):
+            root_pos_w = root_pos_w.torch
+        if hasattr(root_quat_w, "torch"):
+            root_quat_w = root_quat_w.torch
+
+        pos_xy = root_pos_w[:, :2]
+        heading = self._heading_from_wxyz(root_quat_w)
+
+        active = (
+            (command[:, 0] > self._min_forward_command)
+            & (torch.abs(command[:, 1]) < self._lateral_command_threshold)
+            & (torch.abs(command[:, 2]) < self._yaw_command_threshold)
+        )
+
+        command_delta = torch.max(
+            torch.abs(command - self._stored_command), dim=1
+        ).values
+        command_changed = command_delta > self._command_change_threshold
+
+        segment_start = active & ((~self._was_active) | command_changed)
+
+        if torch.any(segment_start):
+            self._anchor_pos_xy[segment_start] = pos_xy[segment_start]
+            self._anchor_heading[segment_start] = heading[segment_start]
+            self._stored_command[segment_start] = command[segment_start]
+            self._elapsed_s[segment_start] = 0.0
+
+        inactive = ~active
+        if torch.any(inactive):
+            self._elapsed_s[inactive] = 0.0
+
+        t = self._elapsed_s
+
+        vx = self._stored_command[:, 0]
+        vy = self._stored_command[:, 1]
+        wz = self._stored_command[:, 2]
+
+        wt = wz * t
+        turning = torch.abs(wz) >= self._yaw_rate_epsilon
+        safe_wz = torch.where(turning, wz, torch.ones_like(wz))
+
+        sin_wt = torch.sin(wt)
+        cos_wt = torch.cos(wt)
+
+        ref_x_turn = (
+            vx * sin_wt
+            + vy * (cos_wt - 1.0)
+        ) / safe_wz
+        ref_y_turn = (
+            vx * (1.0 - cos_wt)
+            + vy * sin_wt
+        ) / safe_wz
+
+        ref_x_straight = vx * t
+        ref_y_straight = vy * t
+
+        ref_x_body0 = torch.where(
+            turning, ref_x_turn, ref_x_straight
+        )
+        ref_y_body0 = torch.where(
+            turning, ref_y_turn, ref_y_straight
+        )
+
+        c0 = torch.cos(self._anchor_heading)
+        s0 = torch.sin(self._anchor_heading)
+
+        ref_dx_world = (
+            c0 * ref_x_body0
+            - s0 * ref_y_body0
+        )
+        ref_dy_world = (
+            s0 * ref_x_body0
+            + c0 * ref_y_body0
+        )
+
+        ref_pos_x = self._anchor_pos_xy[:, 0] + ref_dx_world
+        ref_pos_y = self._anchor_pos_xy[:, 1] + ref_dy_world
+
+        command_velocity_angle = torch.atan2(vy, vx)
+        tangent_heading = (
+            self._anchor_heading
+            + wt
+            + command_velocity_angle
+        )
+
+        lateral_axis_x = -torch.sin(tangent_heading)
+        lateral_axis_y = torch.cos(tangent_heading)
+
+        error_x = pos_xy[:, 0] - ref_pos_x
+        error_y = pos_xy[:, 1] - ref_pos_y
+
+        cross_track = (
+            error_x * lateral_axis_x
+            + error_y * lateral_axis_y
+        )
+
+        cost = 1.0 - torch.exp(
+            -torch.square(cross_track / self._sigma_m)
+        )
+        cost = cost * active.to(dtype=cost.dtype)
+
+        self._elapsed_s[active] += self._step_dt
+        self._was_active[:] = active
+
+        return cost
