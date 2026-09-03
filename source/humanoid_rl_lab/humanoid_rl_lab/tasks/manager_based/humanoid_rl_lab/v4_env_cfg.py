@@ -19,6 +19,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CurriculumCfg as LocomotionVelocityCurriculumCfg
 
 from .mdp.v4_rewards import (
+    geometric_command_path_pose_bounded,
     geometric_command_path_cross_track_bounded,
     straight_line_lateral_velocity_ema_bounded,
     stand_still_joint_deviation_full_command_l1,
@@ -374,6 +375,53 @@ class HumanoidRlLabG1V4KGeometricPathPrecisionEnvCfg(HumanoidRlLabG1V4BDirectYaw
             params={
                 "command_name": "base_velocity",
                 "sigma_m": 0.20,
+                "min_forward_command": 0.10,
+                "lateral_command_threshold": 0.10,
+                "yaw_command_threshold": 0.20,
+                "command_change_threshold": 1.0e-6,
+                "yaw_rate_epsilon": 1.0e-4,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+
+# ==================================================================================================
+# EXPERIMENTAL v4-L PATH-POSE PRECISION - GENUINE SCRATCH
+# Scientific parent: v4-B Direct-Yaw.
+#
+# ONLY scientific intervention versus v4-B:
+#   add one composite geometric path-pose reward
+#
+# Composite reward:
+#   cross-track sigma           : 0.20 m
+#   heading sigma               : 5 deg = 0.08726646259971647 rad
+#   weight                      : -0.15
+#   active iff                  : vx_cmd > 0.10 m/s
+#                                |vy_cmd| < 0.10 m/s
+#                                |wz_cmd| < 0.20 rad/s
+#   segment reset              : episode reset, gate exit/re-entry, command resample/change
+#   command-change threshold   : 1e-6
+#   yaw-rate analytic epsilon  : 1e-4 rad/s
+#
+# At [0.40, 0, 0], this jointly asks the policy to remain near the initial straight line AND keep
+# body heading near the segment-start heading, closing the yaw/crab compensation observed in v4-K.
+#
+# Everything else inherits unchanged from v4-B / Official G1 Flat.
+# No v4-C/v4-D/v4-E/v4-F/v4-G/v4-H/v4-I/v4-J/v4-K scientific inheritance.
+# ==================================================================================================
+@configclass
+class HumanoidRlLabG1V4LPathPosePrecisionEnvCfg(HumanoidRlLabG1V4BDirectYawEnvCfg):
+    'v4-L: v4-B plus bounded geometric path-pose precision.'
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.rewards.geometric_command_path_pose_bounded = RewTerm(
+            func=geometric_command_path_pose_bounded,
+            weight=-0.15,
+            params={
+                "command_name": "base_velocity",
+                "sigma_cross_m": 0.20,
+                "sigma_heading_rad": 0.08726646259971647,
                 "min_forward_command": 0.10,
                 "lateral_command_threshold": 0.10,
                 "yaw_command_threshold": 0.20,
