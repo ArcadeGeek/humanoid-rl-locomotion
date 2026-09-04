@@ -647,3 +647,20 @@ gym.register(
         ),
     },
 )
+
+# Experimental v4-N: v4-B direct-yaw with native RSL-RL left/right symmetry data augmentation only.
+gym.register(
+    id="Humanoid-RL-Lab-G1-Flat-V4N-Symmetry-Augmentation-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.v4_env_cfg:"
+            "HumanoidRlLabG1V4BDirectYawEnvCfg"
+        ),
+        "rsl_rl_cfg_entry_point": (
+            f"{agents.__name__}.v4n_ppo_cfg:"
+            "V4NSymmetryAugmentationPPORunnerCfg"
+        ),
+    },
+)
