@@ -1,0 +1,137 @@
+{
+  "status": "PASS",
+  "classification": "final video V01; exact scientific straight command; canonical Phase10B ROS source contract",
+  "frame_id": "g1_cmd_source_linux_phase10b_canonical",
+  "sequence": [
+    [
+      "zero_before",
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      3.0
+    ],
+    [
+      "straight",
+      [
+        0.4,
+        0.0,
+        0.0
+      ],
+      12.0
+    ],
+    [
+      "zero_after",
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      3.0
+    ]
+  ],
+  "rate_hz": 50.0,
+  "route": "10.42.0.1 dev eno1 src 10.42.0.2 uid 1000 \n    cache",
+  "wifi": "wlo1             DOWN",
+  "fastdds_profile": "/home/mirko/Scaricati/g1_fastdds_ethernet_linux.xml",
+  "endpoint_counts_at_discovery": {
+    "cmd_subscribers": 1,
+    "status_publishers": 1,
+    "echo_publishers": 1,
+    "twist_publishers": 1,
+    "pose_publishers": 1
+  },
+  "sent": {
+    "zero": 302,
+    "straight": 601
+  },
+  "echo": {
+    "zero": 301,
+    "straight": 601,
+    "other": 0
+  },
+  "echo_deficit": 1,
+  "echo_deficit_pct": 0.11074197120708748,
+  "status_messages": 89,
+  "twist_messages": 305,
+  "pose_messages": 305,
+  "send_lateness_ms": {
+    "n": 903,
+    "mean": 0.5227301705134609,
+    "median": 0.47947174607543275,
+    "min": 0.05848971341038123,
+    "max": 2.717377785302233
+  },
+  "straight_body_vx": {
+    "n": 173,
+    "mean": 0.3767765844832955,
+    "median": 0.379223108291626,
+    "min": 0.33003702759742737,
+    "max": 0.44044560194015503
+  },
+  "guardrails": {
+    "ethernet_route_expected": true,
+    "wifi_down": true,
+    "endpoint_discovery": true,
+    "single_windows_endpoint_each": true,
+    "status_received": true,
+    "body_twist_received": true,
+    "pose_received": true,
+    "zero_echo_seen": true,
+    "straight_echo_seen": true,
+    "no_unexpected_echo": true,
+    "echo_deficit_le_1pct": true,
+    "policy_loaded": true,
+    "checkpoint_sha_pass": true,
+    "effective_zero_seen": true,
+    "effective_straight_seen": true,
+    "straight_forward_motion": true,
+    "no_environment_resets": true,
+    "no_rejected_commands": true,
+    "no_invalid_commands": true,
+    "no_watchdog_during_straight": true,
+    "invalid_status_zero": true,
+    "linux_executor": true
+  },
+  "spin_errors": [],
+  "rollout_wall_s": 18.00125547400239,
+  "stages": [
+    {
+      "stage": "zero_before",
+      "classification": "neutral",
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "start_s": 46747.302337496,
+      "end_s": 46750.302835122,
+      "duration_wall_s": 3.0004976259951945
+    },
+    {
+      "stage": "straight",
+      "classification": "scientific",
+      "command": [
+        0.4,
+        0.0,
+        0.0
+      ],
+      "start_s": 46750.302852771,
+      "end_s": 46762.303396113,
+      "duration_wall_s": 12.000543342001038
+    },
+    {
+      "stage": "zero_after",
+      "classification": "neutral",
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "start_s": 46762.303413493,
+      "end_s": 46765.303585631,
+      "duration_wall_s": 3.0001721380031086
+    }
+  ]
+}

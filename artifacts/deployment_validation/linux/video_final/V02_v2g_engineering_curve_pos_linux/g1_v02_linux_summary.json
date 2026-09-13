@@ -1,0 +1,145 @@
+{
+  "status": "PASS",
+  "classification": "final video V02; engineering positive-yaw curve command; canonical Phase10B ROS source contract",
+  "frame_id": "g1_cmd_source_linux_phase10b_canonical",
+  "sequence": [
+    [
+      "zero_before",
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      3.0
+    ],
+    [
+      "curve_pos",
+      [
+        0.4,
+        0.0,
+        0.25
+      ],
+      12.0
+    ],
+    [
+      "zero_after",
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      3.0
+    ]
+  ],
+  "rate_hz": 50.0,
+  "route": "10.42.0.1 dev eno1 src 10.42.0.2 uid 1000 \n    cache",
+  "wifi": "wlo1             DOWN",
+  "fastdds_profile": "/home/mirko/Scaricati/g1_fastdds_ethernet_linux.xml",
+  "endpoint_counts_at_discovery": {
+    "cmd_subscribers": 1,
+    "status_publishers": 1,
+    "echo_publishers": 1,
+    "twist_publishers": 1,
+    "pose_publishers": 1
+  },
+  "sent": {
+    "zero": 302,
+    "curve_pos": 601
+  },
+  "echo": {
+    "zero": 300,
+    "curve_pos": 599,
+    "other": 0
+  },
+  "echo_deficit": 4,
+  "echo_deficit_pct": 0.4429678848283499,
+  "status_messages": 76,
+  "twist_messages": 287,
+  "pose_messages": 287,
+  "send_lateness_ms": {
+    "n": 903,
+    "mean": 0.17171947665107493,
+    "median": 0.16028599929995835,
+    "min": 0.06724133709212765,
+    "max": 0.9762843765201978
+  },
+  "curve_pos_body_vx": {
+    "n": 160,
+    "mean": 0.3252880952320993,
+    "median": 0.32040268182754517,
+    "min": 0.14762072265148163,
+    "max": 0.5591273307800293
+  },
+  "curve_pos_body_wz": {
+    "n": 160,
+    "mean": 0.14239183931204025,
+    "median": 0.1559978500008583,
+    "min": -1.1359659433364868,
+    "max": 0.7098358869552612
+  },
+  "guardrails": {
+    "ethernet_route_expected": true,
+    "wifi_down": true,
+    "endpoint_discovery": true,
+    "single_windows_endpoint_each": true,
+    "status_received": true,
+    "body_twist_received": true,
+    "pose_received": true,
+    "zero_echo_seen": true,
+    "curve_pos_echo_seen": true,
+    "no_unexpected_echo": true,
+    "echo_deficit_le_1pct": true,
+    "policy_loaded": true,
+    "checkpoint_sha_pass": true,
+    "effective_zero_seen": true,
+    "effective_curve_seen": true,
+    "curve_pos_forward_motion": true,
+    "curve_pos_correct_sign_wz": true,
+    "no_environment_resets": true,
+    "no_rejected_commands": true,
+    "no_invalid_commands": true,
+    "no_watchdog_during_curve": true,
+    "invalid_status_zero": true,
+    "linux_executor": true
+  },
+  "spin_errors": [],
+  "rollout_wall_s": 18.000580880994676,
+  "stages": [
+    {
+      "stage": "zero_before",
+      "classification": "neutral",
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "start_s": 36594.099896245,
+      "end_s": 36597.1000765,
+      "duration_wall_s": 3.0001802549959393
+    },
+    {
+      "stage": "curve_pos",
+      "classification": "engineering",
+      "command": [
+        0.4,
+        0.0,
+        0.25
+      ],
+      "start_s": 36597.100082588,
+      "end_s": 36609.100294879,
+      "duration_wall_s": 12.000212291000935
+    },
+    {
+      "stage": "zero_after",
+      "classification": "neutral",
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "start_s": 36609.100301569,
+      "end_s": 36612.100472597,
+      "duration_wall_s": 3.000171027997567
+    }
+  ]
+}
