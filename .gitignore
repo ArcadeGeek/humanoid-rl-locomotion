@@ -93,3 +93,7 @@ docs/superpowers/
 __pycache__/
 *.py[cod]
 checkpoints/
+
+# Final thesis videos intentionally tracked
+!/videos/
+!/videos/**
